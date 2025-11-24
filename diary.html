@@ -19,11 +19,10 @@
         <div class="max-w-2xl mx-auto px-4 h-16 flex items-center justify-between">
             <a href="index.html" class="text-slate-400 hover:text-pink-500 transition-colors"><i data-lucide="home" class="w-6 h-6"></i></a>
             <h1 class="font-bold text-lg text-slate-700">林白的记忆碎片</h1>
-            <!-- 只有登录才显示的退出按钮 -->
             <button id="logoutBtn" class="hidden text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors">
                 <i data-lucide="log-out" class="w-4 h-4"></i> 退出
             </button>
-            <div id="guestPlaceholder" class="w-6"></div> <!-- 游客占位 -->
+            <div id="guestPlaceholder" class="w-6"></div>
         </div>
     </header>
 
@@ -34,16 +33,14 @@
         </div>
     </main>
 
-    <!-- ➕ 添加按钮 (只有管理员可见) -->
     <a href="write.html" id="addBtn" class="hidden fixed bottom-8 right-8 w-14 h-14 bg-gradient-to-r from-pink-500 to-purple-500 text-white rounded-full shadow-lg hover:scale-110 active:scale-95 transition-all z-40 items-center justify-center">
         <i data-lucide="plus" class="w-8 h-8"></i>
     </a>
 
-    <!-- 详情弹窗 -->
+    <!-- 弹窗 -->
     <div id="postModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm hidden z-50 flex items-end md:items-center justify-center p-0 md:p-4 transition-opacity">
         <div class="bg-white w-full md:max-w-xl h-[85vh] md:h-auto md:max-h-[80vh] rounded-t-3xl md:rounded-3xl shadow-2xl p-6 relative flex flex-col animate-slide-up">
             <div class="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
-                <!-- 管理员操作区 -->
                 <div id="adminActions" class="hidden flex gap-3">
                     <button id="editBtn" class="text-blue-500 hover:bg-blue-50 px-3 py-1.5 rounded-lg text-sm font-bold flex gap-1"><i data-lucide="edit" class="w-4 h-4"></i> 编辑</button>
                     <button id="deleteBtn" class="text-red-400 hover:bg-red-50 px-3 py-1.5 rounded-lg text-sm font-bold flex gap-1"><i data-lucide="trash-2" class="w-4 h-4"></i> 删除</button>
@@ -58,7 +55,8 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, getDocs, query, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        // ⚠️ 注意：这里多引入了一个 'where'，这是用来筛选的关键！
+        import { getFirestore, collection, getDocs, query, where, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // ⚠️ 欧尼酱的配置 (保持不变)
         const firebaseConfig = {
@@ -76,25 +74,22 @@
         const db = getFirestore(app);
         const postsCollection = collection(db, 'posts');
 
-        let isAdmin = false; // 记录当前是不是管理员
-        let currentPostId = null; // 当前查看的日记 ID
+        let isAdmin = false; 
+        let currentPostId = null;
 
-        // 🕵️‍♀️ 侦探模式：检查你是谁
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 isAdmin = true;
                 document.getElementById('logoutBtn').classList.remove('hidden');
                 document.getElementById('guestPlaceholder').classList.add('hidden');
-                document.getElementById('addBtn').classList.remove('hidden'); // 显示添加按钮
+                document.getElementById('addBtn').classList.remove('hidden'); 
                 document.getElementById('addBtn').style.display = 'flex';
-                showStatus("欢迎回来，欧尼酱！已开启管理员视角 👀", "success");
             } else {
                 isAdmin = false;
             }
-            loadPosts(); // 身份确定后，加载日记
+            loadPosts(); 
         });
 
-        // 退出登录
         document.getElementById('logoutBtn').onclick = () => {
             signOut(auth).then(() => window.location.reload());
         };
@@ -103,28 +98,36 @@
         
         async function loadPosts() {
             try {
-                // 这里为了简单，我们拉取所有日记，然后在 JS 里过滤
-                // (专业做法是用 Security Rules，但这对初学者最简单)
-                const q = query(postsCollection);
+                let q;
+
+                // 🚨 这里的逻辑变了！
+                if (isAdmin) {
+                    // 如果是管理员，请求所有日记
+                    q = query(postsCollection);
+                } else {
+                    // 如果是游客，只请求 'status' 等于 'public' 的日记
+                    // 这样才符合保安(Rules)的要求！
+                    q = query(postsCollection, where("status", "==", "public"));
+                }
+
                 const querySnapshot = await getDocs(q);
                 const posts = [];
                 querySnapshot.forEach((doc) => posts.push({ id: doc.id, ...doc.data() }));
                 
-                // 按时间排序
+                // 本地排序（为了避免欧尼酱去配置复杂的索引，我们先获取再排序）
                 posts.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
                 postsContainer.innerHTML = ''; 
-                let visibleCount = 0;
+                
+                if (posts.length === 0) {
+                    postsContainer.innerHTML = `<div class="text-center py-20 opacity-50"><p>暂时没有公开日记哦</p></div>`;
+                    return;
+                }
 
                 posts.forEach(post => {
-                    // 🚨 核心逻辑：如果不是公开的，且不是管理员，就隐藏！
-                    const isPublic = post.status === 'public' || !post.status; // 兼容以前没设置 status 的旧日记
-                    if (!isAdmin && !isPublic) return; 
-
-                    visibleCount++;
+                    // 显示逻辑
                     const dateObj = post.createdAt ? new Date(post.createdAt.seconds * 1000) : new Date();
                     
-                    // 状态标签 (只有管理员看得到)
                     let statusBadge = '';
                     if (isAdmin) {
                         if (post.status === 'private') statusBadge = `<span class="bg-purple-100 text-purple-600 text-xs px-2 py-0.5 rounded ml-2">🔒 私密</span>`;
@@ -146,24 +149,26 @@
                     postsContainer.appendChild(card);
                 });
 
-                if (visibleCount === 0) {
-                    postsContainer.innerHTML = `<div class="text-center py-20 opacity-50"><p>暂时没有公开日记哦</p></div>`;
-                }
-
-            } catch (error) { console.error(error); }
+            } catch (error) { 
+                console.error(error); 
+                postsContainer.innerHTML = `<div class="text-center text-red-400 py-10">
+                    <p>加载失败了 ( >﹏<。)</p>
+                    <p class="text-xs mt-2 text-slate-400">${error.message}</p>
+                </div>`;
+            }
         }
 
-        // 打开详情
+        // --- 剩下的弹窗逻辑保持不变 ---
         const modal = document.getElementById('postModal');
         const modalContent = document.getElementById('modalContent');
         const adminActions = document.getElementById('adminActions');
         const guestActions = document.getElementById('guestActions');
+        let currentPost = null;
 
         function openModal(post) {
             currentPostId = post.id;
             const dateObj = post.createdAt ? new Date(post.createdAt.seconds * 1000) : new Date();
             
-            // 只有管理员能看到操作按钮
             if (isAdmin) {
                 adminActions.classList.remove('hidden');
                 guestActions.classList.add('hidden');
@@ -184,25 +189,21 @@
             lucide.createIcons();
         }
 
-        // ✏️ 编辑跳转
         document.getElementById('editBtn').onclick = () => {
             window.location.href = `write.html?id=${currentPostId}`;
         };
 
-        // 🗑️ 删除
         document.getElementById('deleteBtn').onclick = async () => {
             if (confirm('真的要删除吗？')) {
                 await deleteDoc(doc(db, "posts", currentPostId));
                 modal.classList.add('hidden');
                 loadPosts();
-                showStatus('已删除！', 'success');
             }
         };
 
         document.getElementById('closeModal').onclick = () => modal.classList.add('hidden');
         modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); }
         function escapeHtml(t) { return t ? t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : ""; }
-        function showStatus(msg, type) { const el=document.getElementById('statusMsg'); el.innerText=msg; el.className=`fixed top-20 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg text-sm font-bold z-50 animate-bounce ${type==='success'?'bg-green-100 text-green-600':'bg-red-100 text-red-600'}`; el.classList.remove('hidden'); setTimeout(()=>el.classList.add('hidden'),3000); }
     </script>
     <style>.animate-slide-up { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); } @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }</style>
 </body>
