@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>林白的日记本 - 登录</title>
+    <title>林白的日记本</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
@@ -19,39 +19,46 @@
     <div class="absolute top-1/4 left-1/4 w-64 h-64 bg-purple-200/30 rounded-full blur-3xl animate-float"></div>
     <div class="absolute bottom-1/4 right-1/4 w-80 h-80 bg-pink-200/30 rounded-full blur-3xl animate-float" style="animation-delay: -2s;"></div>
 
-    <main class="relative z-10 bg-white/60 backdrop-blur-sm p-12 rounded-[3rem] shadow-xl border border-white/50 max-w-md w-full">
-        <div class="text-6xl mb-6">🔒</div>
-        <h1 class="text-4xl font-bold text-slate-800 mb-2">林白的日记本</h1>
-        <p class="text-slate-400 text-sm mb-10">私密空间，闲人免进</p>
+    <main class="relative z-10 bg-white/60 backdrop-blur-sm p-12 rounded-[3rem] shadow-xl border border-white/50 max-w-md w-full transition-transform hover:scale-105 duration-500">
+        <div class="text-6xl mb-6">📖</div>
+        
+        <h1 class="text-4xl md:text-5xl font-bold text-slate-800 mb-4 tracking-wider">
+            林白的<br>
+            <span class="text-pink-500">日记本</span>
+        </h1>
+        
+        <p class="text-slate-500 mb-12 text-sm md:text-base italic">
+            "欢迎光临我的世界..."
+        </p>
 
-        <!-- 登录状态显示 -->
-        <div id="loadingState" class="hidden text-pink-500 font-bold mb-4 animate-pulse">正在验证身份喵...</div>
-
-        <!-- 登录按钮 -->
-        <button id="showLoginBtn" class="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-gradient-to-r from-pink-500 to-purple-500 rounded-full hover:shadow-lg active:scale-95 w-full">
+        <!-- 游客直接进入 -->
+        <a href="diary.html" class="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-gradient-to-r from-pink-500 to-purple-500 rounded-full hover:shadow-lg hover:shadow-pink-500/30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 active:scale-95">
+            <span class="absolute inset-0 w-full h-full -mt-1 rounded-lg opacity-30 bg-gradient-to-b from-transparent via-transparent to-black"></span>
             <span class="relative flex items-center gap-2">
-                <i data-lucide="key" class="w-5 h-5"></i> 解锁日记
+                阅读日记
+                <i data-lucide="arrow-right" class="w-5 h-5 transition-transform group-hover:translate-x-1"></i>
             </span>
-        </button>
+        </a>
     </main>
 
-    <!-- 🔐 登录弹窗 (Modal) -->
+    <!-- 底部秘密入口 -->
+    <footer class="absolute bottom-6 text-slate-400 text-xs flex items-center gap-2">
+        <span>&copy; 2025 Linbai's Diary</span>
+        <!-- 点击这个小锁登录 -->
+        <button id="adminLoginBtn" class="hover:text-pink-500 transition-colors" title="管理员登录">
+            <i data-lucide="lock" class="w-3 h-3"></i>
+        </button>
+    </footer>
+
+    <!-- 🔐 登录弹窗 -->
     <div id="loginModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
         <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8 relative animate-scale-up">
             <button id="closeModal" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-6 h-6"></i></button>
-            
-            <h2 class="text-xl font-bold text-slate-700 mb-6 text-center">身份验证</h2>
-            
+            <h2 class="text-xl font-bold text-slate-700 mb-6 text-center">主人身份验证</h2>
             <div class="space-y-4">
-                <div>
-                    <input type="email" id="email" placeholder="账号 (Email)" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-pink-300 transition-all">
-                </div>
-                <div>
-                    <input type="password" id="password" placeholder="密码" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-pink-300 transition-all">
-                </div>
-                <button id="loginBtn" class="w-full py-3 bg-pink-500 hover:bg-pink-600 text-white rounded-xl font-bold shadow-md transition-all active:scale-95">
-                    登录
-                </button>
+                <input type="email" id="email" placeholder="账号" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-pink-300">
+                <input type="password" id="password" placeholder="密码" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-pink-300">
+                <button id="loginBtn" class="w-full py-3 bg-pink-500 hover:bg-pink-600 text-white rounded-xl font-bold shadow-md active:scale-95 transition-all">登录</button>
             </div>
             <p id="errorMsg" class="text-red-500 text-xs text-center mt-4 hidden"></p>
         </div>
@@ -61,6 +68,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
+        // ⚠️ 欧尼酱的配置 (保持不变)
         const firebaseConfig = {
             apiKey: "AIzaSyDdqCijPyu6KDVAQMIrNUV2qAPTkk0Ree0",
             authDomain: "linbai-blog.firebaseapp.com",
@@ -73,56 +81,41 @@
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
-
         lucide.createIcons();
-        const modal = document.getElementById('loginModal');
-        const showLoginBtn = document.getElementById('showLoginBtn');
-        const loginBtn = document.getElementById('loginBtn');
-        const emailInput = document.getElementById('email');
-        const passInput = document.getElementById('password');
-        const errorMsg = document.getElementById('errorMsg');
-        const loadingState = document.getElementById('loadingState');
 
-        // 如果已经登录，直接进日记
+        const modal = document.getElementById('loginModal');
+        
+        // 自动检测：如果已经登录，小锁变成打开状态，或者直接跳到管理页(这里选择不跳，保持低调)
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                loadingState.innerText = "欢迎回来，欧尼酱！正在跳转...";
-                loadingState.classList.remove('hidden');
-                showLoginBtn.classList.add('hidden');
-                setTimeout(() => window.location.href = 'diary.html', 1000);
+                console.log("主人已登录！");
+                document.getElementById('adminLoginBtn').innerHTML = `<i data-lucide="unlock" class="w-3 h-3 text-green-500"></i>`;
+                lucide.createIcons();
             }
         });
 
-        // 打开弹窗
-        showLoginBtn.onclick = () => {
-            modal.classList.remove('hidden');
-            emailInput.focus();
+        document.getElementById('adminLoginBtn').onclick = () => {
+            // 如果已经登录，点击就是去日记页
+            if (auth.currentUser) {
+                window.location.href = 'diary.html';
+            } else {
+                modal.classList.remove('hidden');
+            }
         };
         document.getElementById('closeModal').onclick = () => modal.classList.add('hidden');
 
-        // 登录逻辑
-        loginBtn.onclick = async () => {
-            const email = emailInput.value;
-            const pass = passInput.value;
-            
-            if(!email || !pass) return;
-
-            loginBtn.disabled = true;
-            loginBtn.innerText = "验证中...";
-            errorMsg.classList.add('hidden');
-
+        document.getElementById('loginBtn').onclick = async () => {
+            const email = document.getElementById('email').value;
+            const pass = document.getElementById('password').value;
             try {
                 await signInWithEmailAndPassword(auth, email, pass);
-                // 成功后，onAuthStateChanged 会自动处理跳转
+                window.location.href = 'diary.html'; // 登录成功跳转
             } catch (error) {
-                console.error(error);
-                errorMsg.innerText = "账号或密码不对哦，不许偷看！😤";
-                errorMsg.classList.remove('hidden');
-                loginBtn.disabled = false;
-                loginBtn.innerText = "登录";
+                document.getElementById('errorMsg').innerText = "密码不对哦喵！😿";
+                document.getElementById('errorMsg').classList.remove('hidden');
             }
         };
     </script>
-    <style> .animate-scale-up { animation: scaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); } @keyframes scaleUp { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } } </style>
+    <style>.animate-scale-up { animation: scaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); } @keyframes scaleUp { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }</style>
 </body>
 </html>
