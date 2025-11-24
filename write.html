@@ -3,19 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>写新日记</title>
+    <title>写日记</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style> @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap'); body { font-family: 'Noto Sans SC', sans-serif; } </style>
 </head>
 <body class="bg-white min-h-screen flex flex-col text-slate-800 opacity-0 transition-opacity duration-500" id="mainBody">
 
     <header class="flex justify-between items-center p-4 border-b border-slate-100 sticky top-0 bg-white/90 backdrop-blur-sm z-10">
         <a href="diary.html" class="text-slate-400 hover:text-slate-600 transition-colors p-2">取消</a>
-        <h1 class="font-bold text-slate-700">新的一页</h1>
-        <button id="publishBtn" class="bg-pink-500 hover:bg-pink-600 text-white px-5 py-2 rounded-full font-bold text-sm shadow-md transition-all active:scale-95">发布</button>
+        <h1 class="font-bold text-slate-700" id="pageTitle">新的一页</h1>
+        <button id="publishBtn" class="bg-pink-500 hover:bg-pink-600 text-white px-5 py-2 rounded-full font-bold text-sm shadow-md transition-all active:scale-95 flex items-center gap-2">
+            <i data-lucide="send" class="w-4 h-4"></i> <span id="btnText">发布</span>
+        </button>
     </header>
 
     <main class="flex-1 p-6 max-w-2xl mx-auto w-full">
+        <!-- 🌈 状态选择器 -->
+        <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
+            <label class="cursor-pointer">
+                <input type="radio" name="status" value="public" class="peer hidden" checked>
+                <div class="px-4 py-2 rounded-full bg-slate-100 text-slate-400 peer-checked:bg-green-100 peer-checked:text-green-600 peer-checked:font-bold transition-all text-sm flex items-center gap-1">
+                    <i data-lucide="globe" class="w-4 h-4"></i> 公开
+                </div>
+            </label>
+            <label class="cursor-pointer">
+                <input type="radio" name="status" value="draft" class="peer hidden">
+                <div class="px-4 py-2 rounded-full bg-slate-100 text-slate-400 peer-checked:bg-gray-200 peer-checked:text-gray-700 peer-checked:font-bold transition-all text-sm flex items-center gap-1">
+                    <i data-lucide="file-edit" class="w-4 h-4"></i> 草稿
+                </div>
+            </label>
+            <label class="cursor-pointer">
+                <input type="radio" name="status" value="private" class="peer hidden">
+                <div class="px-4 py-2 rounded-full bg-slate-100 text-slate-400 peer-checked:bg-purple-100 peer-checked:text-purple-600 peer-checked:font-bold transition-all text-sm flex items-center gap-1">
+                    <i data-lucide="lock" class="w-4 h-4"></i> 私密
+                </div>
+            </label>
+        </div>
+
         <input type="text" id="newTitle" placeholder="标题..." class="w-full text-2xl font-bold placeholder-slate-300 border-none outline-none mb-6 bg-transparent">
         <textarea id="newContent" placeholder="写点什么..." class="w-full h-[60vh] text-lg leading-relaxed text-slate-600 placeholder-slate-300 border-none outline-none resize-none bg-transparent"></textarea>
     </main>
@@ -23,8 +48,9 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+        // ⚠️ 欧尼酱的配置 (保持不变)
         const firebaseConfig = {
             apiKey: "AIzaSyDdqCijPyu6KDVAQMIrNUV2qAPTkk0Ree0",
             authDomain: "linbai-blog.firebaseapp.com",
@@ -40,34 +66,71 @@
         const db = getFirestore(app);
         const postsCollection = collection(db, 'posts');
 
-        // 🛡️ 安全检查
+        // 检查登录
         onAuthStateChanged(auth, (user) => {
-            if (user) {
-                document.getElementById('mainBody').classList.remove('opacity-0');
-            } else {
-                window.location.href = 'index.html'; // 没登录就踢走
-            }
+            if (user) document.getElementById('mainBody').classList.remove('opacity-0');
+            else window.location.href = 'index.html';
         });
 
-        const publishBtn = document.getElementById('publishBtn');
+        // 检查是否是编辑模式 (URL里有没有 ?id=xxx)
+        const urlParams = new URLSearchParams(window.location.search);
+        const editDocId = urlParams.get('id');
+
         const newTitle = document.getElementById('newTitle');
         const newContent = document.getElementById('newContent');
+        const publishBtn = document.getElementById('publishBtn');
+
+        lucide.createIcons();
+
+        // 如果是编辑模式，先读取旧数据
+        if (editDocId) {
+            document.getElementById('pageTitle').innerText = "修改日记";
+            document.getElementById('btnText').innerText = "更新";
+            loadData(editDocId);
+        }
+
+        async function loadData(id) {
+            const docSnap = await getDoc(doc(db, "posts", id));
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                newTitle.value = data.title;
+                newContent.value = data.content;
+                // 设置单选框
+                const status = data.status || 'public';
+                document.querySelector(`input[name="status"][value="${status}"]`).checked = true;
+            }
+        }
 
         publishBtn.addEventListener('click', async () => {
             const title = newTitle.value.trim();
             const content = newContent.value.trim();
+            const status = document.querySelector('input[name="status"]:checked').value; // 获取选中的状态
+
             if (!title || !content) { alert('不能为空哦！'); return; }
 
             publishBtn.disabled = true;
             publishBtn.innerText = "保存中...";
 
             try {
-                await addDoc(postsCollection, {
-                    title: title, content: content, createdAt: serverTimestamp(), author: "欧尼酱"
-                });
+                const postData = {
+                    title: title, 
+                    content: content, 
+                    status: status, // 保存状态
+                    author: "欧尼酱"
+                };
+
+                if (editDocId) {
+                    // 更新模式
+                    await updateDoc(doc(db, "posts", editDocId), postData);
+                } else {
+                    // 新增模式
+                    postData.createdAt = serverTimestamp(); // 只有新增才记录创建时间
+                    await addDoc(postsCollection, postData);
+                }
+                
                 window.location.href = 'diary.html';
             } catch (error) {
-                alert('保存失败：' + error.message);
+                alert('失败惹：' + error.message);
                 publishBtn.disabled = false;
             }
         });
