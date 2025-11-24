@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>汐凪的星空云端跑酷 Final Ver. (≧◡≦)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Muli', 'Microsoft YaHei', sans-serif;
+            background: radial-gradient(circle at bottom, #4b0082 0%, #1a0b2e 100%);
+            color: white;
+            user-select: none;
+        }
+        #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: flex; flex-direction: column; align-items: center;
+        }
+        /* 顶部信息栏 (游戏中显示) */
+        #top-bar {
+            margin-top: 20px; display: none; gap: 20px; /* 默认隐藏，开始游戏后显示 */
+            background: rgba(255, 255, 255, 0.1); padding: 10px 30px;
+            border-radius: 50px; border: 1px solid rgba(255,255,255,0.3);
+            backdrop-filter: blur(10px); box-shadow: 0 0 20px rgba(255, 105, 180, 0.3);
+        }
+        .stat-item { font-size: 20px; font-weight: bold; text-shadow: 0 0 5px rgba(255,255,255,0.8); }
+        #score-val { color: #00ffff; }
+        #stars-val { color: #ff69b4; }
+
+        /* 通用弹窗样式 */
+        .popup-screen {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(20, 10, 40, 0.85); backdrop-filter: blur(20px);
+            padding: 40px; border-radius: 40px; text-align: center;
+            border: 3px solid rgba(255, 182, 193, 0.5);
+            box-shadow: 0 0 60px rgba(255, 105, 180, 0.6);
+            pointer-events: auto; min-width: 350px; display: none;
+        }
+        
+        /* 主页样式增强 */
+        #start-screen { display: block; }
+        
+        .stats-card {
+            display: flex; justify-content: center; gap: 40px;
+            margin: 30px 0; padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+        }
+        .stat-box { display: flex; flex-direction: column; }
+        .stat-label { font-size: 14px; color: #ddd; margin-bottom: 5px; }
+        .stat-value { font-size: 28px; font-weight: bold; }
+        .gold { color: #ffd700; text-shadow: 0 0 10px rgba(255, 215, 0, 0.5); }
+        .pink { color: #ff69b4; text-shadow: 0 0 10px rgba(255, 105, 180, 0.5); }
+
+        h1 {
+            font-size: 42px; margin: 0 0 10px 0;
+            background: linear-gradient(to right, #ff9a9e, #fecfef, #a18cd1);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 10px rgba(255,192,203,0.8));
+        }
+        p { font-size: 16px; color: #e0e0e0; line-height: 1.6; }
+        
+        button {
+            background: linear-gradient(45deg, #ff6b6b, #f06595); border: none;
+            padding: 15px 50px; color: white; font-size: 22px; border-radius: 50px;
+            cursor: pointer; transition: all 0.3s ease; font-weight: bold;
+            box-shadow: 0 5px 20px rgba(240, 101, 149, 0.5); margin: 15px;
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        button:hover { transform: scale(1.05) translateY(-2px); box-shadow: 0 10px 30px rgba(240, 101, 149, 0.8); }
+        .secondary-btn {
+            background: transparent; border: 2px solid rgba(255,255,255,0.3);
+            font-size: 16px; padding: 10px 30px; box-shadow: none;
+        }
+        .secondary-btn:hover { background: rgba(255,255,255,0.1); box-shadow: 0 0 15px rgba(255,255,255,0.2); }
+    </style>
+</head>
+<body>
+
+    <div id="game-container"></div>
+
+    <div id="ui-layer">
+        <!-- 游戏顶部栏 (仅游戏时显示) -->
+        <div id="top-bar">
+            <div class="stat-item">SCORE: <span id="score-val">0</span></div>
+            <div class="stat-item">⭐ STARS: <span id="stars-val">0</span></div>
+        </div>
+        
+        <!-- 1. 主页 -->
+        <div id="start-screen" class="popup-screen">
+            <h1>✨ 梦幻云端 ✨</h1>
+            
+            <!-- 历史成绩展示区 -->
+            <div class="stats-card">
+                <div class="stat-box">
+                    <span class="stat-label">历史最高分</span>
+                    <span id="home-high-score" class="stat-value gold">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">星星总数</span>
+                    <span id="home-total-stars" class="stat-value pink">0</span>
+                </div>
+            </div>
+
+            <p>WASD / 方向键 移动 | SPACE 跳跃 | ESC 菜单</p>
+            <button onclick="startGame()">开始旅程</button>
+        </div>
+
+        <!-- 2. 暂停 -->
+        <div id="pause-screen" class="popup-screen">
+            <h1>⏸️ 暂停</h1>
+            <button onclick="togglePause()">继续</button>
+            <button class="secondary-btn" onclick="returnToHome()">返回主页</button>
+        </div>
+
+        <!-- 3. 结束 -->
+        <div id="game-over-screen" class="popup-screen">
+            <h1>💫 变成流星啦...</h1>
+            <p>本次得分: <span id="final-score" style="color: #00ffff; font-size: 28px;">0</span></p>
+            <button onclick="resetGame()">再次起飞</button>
+            <button class="secondary-btn" onclick="returnToHome()">返回主页</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        // 汐凪的魔法变量
+        let scene, camera, renderer;
+        let player, playerLight;
+        let clock;
+        let isGameRunning = false;
+        let isPaused = false;
+        
+        let speed = 30; 
+        let score = 0;
+        let currentRunStars = 0;
+        let highScore = 0;
+        let totalStars = 0;
+
+        const LANE_WIDTH = 4.5; 
+        const LANES = [-LANE_WIDTH, 0, LANE_WIDTH]; 
+        let currentLane = 1; 
+        
+        let playerVelocityY = 0;
+        let isJumping = false;
+        const GRAVITY = -60;
+        const JUMP_FORCE = 22;
+        const GROUND_Y = 1; 
+
+        const objects = []; 
+        const platforms = []; 
+        const particles = []; 
+        const decorations = []; 
+        let starField; 
+        
+        // 提前声明当前生成点
+        let currentZ = 0;
+
+        const colors = {
+            player: 0xff1493, 
+            star: 0xffd700,   
+            obstacle: 0x2a003b, 
+            platform: [0xffc0cb, 0xe6e6fa, 0x87ceeb, 0xffdac1] 
+        };
+
+        function getStorage(key) { try { return parseInt(localStorage.getItem(key)) || 0; } catch (e) { return 0; } }
+        function setStorage(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
+
+        // 全局绑定
+        window.startGame = function() {
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('top-bar').style.display = 'flex'; // 显示 HUD
+            resetScene();
+            score = 0;
+            currentRunStars = 0;
+            speed = 30;
+            isGameRunning = true;
+            isPaused = false;
+            updateGameUI();
+            clock.start();
+        }
+
+        window.resetGame = function() {
+            document.getElementById('game-over-screen').style.display = 'none';
+            window.startGame();
+        }
+
+        window.togglePause = function() {
+            if (!isGameRunning) return;
+            isPaused = !isPaused;
+            document.getElementById('pause-screen').style.display = isPaused ? 'block' : 'none';
+            if(isPaused) clock.stop(); else clock.start();
+        }
+
+        window.returnToHome = function() {
+            document.getElementById('pause-screen').style.display = 'none';
+            document.getElementById('game-over-screen').style.display = 'none';
+            document.getElementById('top-bar').style.display = 'none'; // 隐藏 HUD
+            document.getElementById('start-screen').style.display = 'block';
+            
+            isGameRunning = false;
+            resetScene(); // 重置场景以便在背景展示
+            speed = 10; // 背景慢速移动
+            
+            updateHomeUI(); // 刷新主页数据
+        }
+
+        init();
+        animate();
+
+        function init() {
+            highScore = getStorage('dreamRunHighScore');
+            totalStars = getStorage('dreamRunTotalStars');
+            updateHomeUI();
+
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x1a0b2e, 0.012); 
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 7, 14); 
+            camera.lookAt(0, 1, -10);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('game-container').appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            
+            const pinkLight = new THREE.PointLight(0xff69b4, 0.5, 100);
+            pinkLight.position.set(20, 20, 0);
+            scene.add(pinkLight);
+            
+            const dirLight = new THREE.DirectionalLight(0xffd700, 0.8);
+            dirLight.position.set(-20, 50, 20);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            dirLight.shadow.camera.near = 0.5;
+            dirLight.shadow.camera.far = 500;
+            dirLight.shadow.camera.left = -50;
+            dirLight.shadow.camera.right = 50;
+            dirLight.shadow.camera.top = 50;
+            dirLight.shadow.camera.bottom = -50;
+            scene.add(dirLight);
+
+            createDreamySky();
+            createPlayer();
+            
+            // 预生成一段跑道 (用于主页背景)
+            resetScene();
+
+            document.addEventListener('keydown', onKeyDown);
+            window.addEventListener('resize', onWindowResize);
+            clock = new THREE.Clock();
+        }
+
+        function updateHomeUI() {
+            document.getElementById('home-high-score').innerText = highScore;
+            document.getElementById('home-total-stars').innerText = totalStars;
+        }
+
+        function updateGameUI() {
+            document.getElementById('score-val').innerText = Math.floor(score);
+            // 游戏中显示：当前收集 + 历史总数，或者只显示当前收集？
+            // 这里显示 总数 (更有积累感)
+            document.getElementById('stars-val').innerText = totalStars + currentRunStars;
+        }
+
+        function createDreamySky() {
+            const starsGeo = new THREE.BufferGeometry();
+            const starsPos = [];
+            for (let i = 0; i < 2000; i++) {
+                const x = (Math.random() - 0.5) * 1000;
+                const y = (Math.random() - 0.5) * 500 + 200;
+                const z = (Math.random() - 0.5) * 1000 - 200;
+                starsPos.push(x, y, z);
+            }
+            starsGeo.setAttribute('position', new THREE.Float32BufferAttribute(starsPos, 3));
+            const starsMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.6, transparent: true, opacity: 0.8 });
+            starField = new THREE.Points(starsGeo, starsMat);
+            scene.add(starField);
+        }
+
+        function createPlayer() {
+            const geometry = new THREE.SphereGeometry(0.6, 32, 32);
+            const material = new THREE.MeshPhongMaterial({ 
+                color: colors.player, 
+                emissive: 0xff1493, 
+                emissiveIntensity: 0.8,
+                shininess: 100
+            });
+            player = new THREE.Mesh(geometry, material);
+            player.position.set(0, GROUND_Y, 0);
+            player.castShadow = true;
+            scene.add(player);
+
+            playerLight = new THREE.PointLight(0xff1493, 1.5, 15);
+            playerLight.position.set(0, 0, 0);
+            player.add(playerLight);
+        }
+
+        // 地形生成
+        function spawnMapChunk(targetZ) {
+            let chunkLength = 0;
+            
+            // 初始状态
+            if (targetZ === undefined || targetZ === 'start') {
+                targetZ = 0;
+                chunkLength = 80;
+                createPlatformBox(0, targetZ, targetZ - chunkLength, 3, colors.platform[0]);
+                for(let i=0; i<8; i++) spawnDecoration(0, targetZ - i*10);
+                return chunkLength; 
+            }
+
+            const patterns = ['LongRun', 'GapJump', 'SingleBridge', 'SplitPath'];
+            const pattern = patterns[Math.floor(Math.random() * patterns.length)];
+            const color = colors.platform[Math.floor(Math.random() * colors.platform.length)];
+
+            switch(pattern) {
+                case 'LongRun':
+                    chunkLength = 40 + Math.random() * 40;
+                    createPlatformBox(0, targetZ, targetZ - chunkLength, 3, color);
+                    spawnItemsOnPath(targetZ, targetZ - chunkLength, [0,1,2]);
+                    break;
+
+                case 'GapJump':
+                    chunkLength = 60;
+                    const step = 12;
+                    for (let z = targetZ; z > targetZ - chunkLength; z -= step) {
+                        const lanes = [Math.random()>0.5, Math.random()>0.5, Math.random()>0.5];
+                        if (!lanes[0] && !lanes[1] && !lanes[2]) lanes[1] = true;
+                        
+                        if(lanes[0]) createPlatformBox(LANES[0], z, z - 8, 1, color);
+                        if(lanes[1]) createPlatformBox(LANES[1], z, z - 8, 1, color);
+                        if(lanes[2]) createPlatformBox(LANES[2], z, z - 8, 1, color);
+                        
+                        spawnItemsOnPath(z, z-8, lanes.map((v,i)=>v?i:-1).filter(v=>v!==-1));
+                    }
+                    break;
+
+                case 'SingleBridge':
+                    chunkLength = 50;
+                    const laneIdx = Math.floor(Math.random() * 3);
+                    createPlatformBox(LANES[laneIdx], targetZ, targetZ - chunkLength, 1, color);
+                    spawnItemsOnPath(targetZ, targetZ - chunkLength, [laneIdx]);
+                    break;
+                
+                case 'SplitPath':
+                    chunkLength = 50;
+                    createPlatformBox(LANES[0], targetZ, targetZ - chunkLength, 1, color);
+                    createPlatformBox(LANES[2], targetZ, targetZ - chunkLength, 1, color);
+                    spawnItemsOnPath(targetZ, targetZ - chunkLength, [0, 2]);
+                    break;
+            }
+
+            spawnDecoration(0, targetZ - chunkLength / 2);
+            return chunkLength;
+        }
+
+        function createPlatformBox(x, zStart, zEnd, widthLanes, color) {
+            const length = Math.abs(zStart - zEnd);
+            const overlap = 0.5; // 增加重叠防止闪烁
+            const width = widthLanes === 3 ? LANE_WIDTH * 3 + 2 : LANE_WIDTH; 
+            
+            const geometry = new THREE.BoxGeometry(width, 1, length + overlap);
+            const material = new THREE.MeshLambertMaterial({ color: color });
+            const mesh = new THREE.Mesh(geometry, material);
+            
+            mesh.position.set(x, -0.5, (zStart + zEnd) / 2);
+            mesh.receiveShadow = true;
+            
+            scene.add(mesh);
+            
+            // 修正：必须确保矩阵更新，以便后续碰撞或生成计算准确
+            mesh.updateMatrixWorld(true);
+            
+            platforms.push({ mesh: mesh, zEnd: Math.min(zStart, zEnd) });
+        }
+
+        function spawnItemsOnPath(zStart, zEnd, validLanes) {
+            // 增加星星密度
+            for (let z = zStart - 5; z > zEnd + 5; z -= 12) {
+                if (Math.random() < 0.2) continue; 
+
+                const lane = validLanes[Math.floor(Math.random() * validLanes.length)];
+                const type = Math.random();
+
+                if (type < 0.7) spawnStar(LANES[lane], z);
+                else spawnObstacle(LANES[lane], z);
+            }
+        }
+
+        function spawnStar(x, z) {
+            const geo = new THREE.OctahedronGeometry(0.5, 0);
+            const mat = new THREE.MeshPhongMaterial({ color: 0xffd700, emissive: 0xffa500, shininess: 100 });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, 1.2, z);
+            mesh.userData = { type: 'star', rotate: true };
+            scene.add(mesh);
+            objects.push(mesh);
+        }
+
+        function spawnObstacle(x, z) {
+            const geo = new THREE.CylinderGeometry(0, 0.6, 2, 6);
+            const mat = new THREE.MeshPhongMaterial({ color: colors.obstacle, flatShading: true });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, 1, z);
+            mesh.castShadow = true;
+            mesh.userData = { type: 'obstacle' };
+            scene.add(mesh);
+            objects.push(mesh);
+        }
+
+        function spawnDecoration(xBase, z) {
+            const side = Math.random() > 0.5 ? 1 : -1;
+            const x = xBase + side * (15 + Math.random() * 10);
+            const y = (Math.random() - 0.5) * 5; 
+
+            const cloudGroup = new THREE.Group();
+            const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 });
+            
+            const s1 = new THREE.Mesh(new THREE.SphereGeometry(2, 8, 8), mat);
+            const s2 = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), mat);
+            s2.position.set(1.5, 0.5, 0);
+            const s3 = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), mat);
+            s3.position.set(-1.5, 0.2, 0.5);
+            
+            cloudGroup.add(s1, s2, s3);
+            cloudGroup.position.set(x, y, z);
+            cloudGroup.userData = { floatSpeed: Math.random() * 0.02, yBase: y };
+            
+            scene.add(cloudGroup);
+            decorations.push(cloudGroup);
+        }
+
+        function resetScene() {
+            platforms.forEach(p => scene.remove(p.mesh));
+            objects.forEach(o => scene.remove(o));
+            decorations.forEach(d => scene.remove(d));
+            platforms.length = 0;
+            objects.length = 0;
+            decorations.length = 0;
+            
+            currentLane = 1;
+            player.position.set(0, GROUND_Y, 0);
+            playerVelocityY = 0;
+            isJumping = false;
+            
+            // 重置生成点
+            let nextZ = 0;
+            nextZ -= spawnMapChunk('start'); 
+            for(let i=0; i<6; i++) {
+                nextZ -= spawnMapChunk(nextZ);
+            }
+        }
+
+        function gameOver() {
+            isGameRunning = false;
+            
+            if (score > highScore) {
+                highScore = Math.floor(score);
+                setStorage('dreamRunHighScore', highScore);
+            }
+            totalStars += currentRunStars;
+            setStorage('dreamRunTotalStars', totalStars);
+
+            document.getElementById('final-score').innerText = Math.floor(score);
+            // 修复：使用正确的 ID (top-bar)
+            document.getElementById('top-bar').style.display = 'none'; 
+            document.getElementById('game-over-screen').style.display = 'block';
+        }
+
+        function onKeyDown(e) {
+            if (e.code === 'Escape') {
+                if (isGameRunning || isPaused) window.togglePause();
+                return;
+            }
+            if (!isGameRunning || isPaused) return;
+
+            switch(e.code) {
+                case 'ArrowLeft': case 'KeyA':
+                    if (currentLane > 0) currentLane--;
+                    break;
+                case 'ArrowRight': case 'KeyD':
+                    if (currentLane < 2) currentLane++;
+                    break;
+                case 'Space': case 'ArrowUp': case 'KeyW':
+                    if (player.position.y <= GROUND_Y + 0.5) {
+                        playerVelocityY = JUMP_FORCE;
+                        isJumping = true;
+                        createParticles(player.position, 0xffffff, 8);
+                    }
+                    break;
+            }
+        }
+
+        function createParticles(pos, color, count) {
+            for(let i=0; i<count; i++) {
+                const mesh = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.2, 0.2, 0.2),
+                    new THREE.MeshBasicMaterial({color: color, transparent: true})
+                );
+                mesh.position.copy(pos);
+                mesh.userData = {
+                    vel: new THREE.Vector3((Math.random()-0.5), Math.random(), (Math.random()-0.5)),
+                    life: 1.0
+                };
+                scene.add(mesh);
+                particles.push(mesh);
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (isPaused) { renderer.render(scene, camera); return; }
+
+            const delta = clock.getDelta();
+            // 主页时慢速，游戏时全速
+            const moveSpeed = isGameRunning ? speed : 10;
+
+            // --- 无缝生成逻辑 ---
+            // 找到场景中最远的那个点的 Z 坐标
+            let tailZ = 0; 
+            if (platforms.length > 0) {
+                let minTail = 99999;
+                platforms.forEach(p => {
+                    const halfLen = p.mesh.geometry.parameters.depth / 2;
+                    const currentTail = p.mesh.position.z - halfLen;
+                    if (currentTail < minTail) minTail = currentTail;
+                });
+                tailZ = minTail;
+            }
+
+            if (tailZ > -300) { 
+                spawnMapChunk(tailZ);
+            }
+
+            // --- 移动物体 ---
+            // 阈值改为 50，确保完全离开视野
+            for (let i = platforms.length - 1; i >= 0; i--) {
+                const p = platforms[i];
+                p.mesh.position.z += moveSpeed * delta;
+                if (p.mesh.position.z > 50) {
+                    scene.remove(p.mesh);
+                    platforms.splice(i, 1);
+                }
+            }
+            
+            for (let i = objects.length - 1; i >= 0; i--) {
+                const obj = objects[i];
+                obj.position.z += moveSpeed * delta;
+                if (obj.userData.rotate) obj.rotation.y += 3 * delta;
+
+                if (isGameRunning) {
+                    const dx = Math.abs(player.position.x - obj.position.x);
+                    const dy = Math.abs(player.position.y - obj.position.y);
+                    const dz = Math.abs(player.position.z - obj.position.z);
+                    
+                    if (dx < 0.8 && dz < 0.8 && dy < 1.0) {
+                        if (obj.userData.type === 'star') {
+                            score += 100;
+                            currentRunStars++;
+                            createParticles(obj.position, 0xffff00, 5);
+                            scene.remove(obj);
+                            objects.splice(i, 1);
+                            updateGameUI();
+                            continue; 
+                        } else if (obj.userData.type === 'obstacle') {
+                            createParticles(player.position, 0xff69b4, 15);
+                            gameOver();
+                        }
+                    }
+                }
+                if (obj.position.z > 50) {
+                    scene.remove(obj);
+                    objects.splice(i, 1);
+                }
+            }
+
+            for (let i = decorations.length - 1; i >= 0; i--) {
+                const d = decorations[i];
+                d.position.z += moveSpeed * delta * 0.8; 
+                d.position.y = d.userData.yBase + Math.sin(Date.now() * 0.001) * 0.5;
+                if (d.position.z > 50) {
+                    scene.remove(d);
+                    decorations.splice(i, 1);
+                }
+            }
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.position.add(p.userData.vel.clone().multiplyScalar(delta * 10));
+                p.userData.life -= delta * 2;
+                p.material.opacity = p.userData.life;
+                if (p.userData.life <= 0) {
+                    scene.remove(p);
+                    particles.splice(i, 1);
+                }
+            }
+
+            if (isGameRunning) {
+                score += delta * 10;
+                speed += delta * 0.1; 
+                updateGameUI();
+
+                const targetX = LANES[currentLane];
+                player.position.x += (targetX - player.position.x) * 12 * delta;
+
+                playerVelocityY += GRAVITY * delta;
+                player.position.y += playerVelocityY * delta;
+
+                let onGround = false;
+                for (const p of platforms) {
+                    const halfW = p.mesh.geometry.parameters.width / 2;
+                    const halfL = p.mesh.geometry.parameters.depth / 2;
+                    const dx = Math.abs(player.position.x - p.mesh.position.x);
+                    const dz = Math.abs(player.position.z - p.mesh.position.z);
+
+                    if (dx < halfW && dz < halfL) {
+                        onGround = true;
+                        break;
+                    }
+                }
+
+                if (onGround) {
+                    if (player.position.y < GROUND_Y) {
+                        player.position.y = GROUND_Y;
+                        playerVelocityY = 0;
+                        isJumping = false;
+                    }
+                }
+
+                if (player.position.y < -10) gameOver();
+            } else {
+                player.position.y = GROUND_Y + Math.sin(Date.now() * 0.002) * 0.2;
+            }
+
+            if (starField) starField.rotation.z += delta * 0.02;
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>

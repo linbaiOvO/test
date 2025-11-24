@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 梦幻糖果跑酷 (二段跳版)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #050505;
+            user-select: none;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100vh;
+            display: block;
+        }
+
+        /* 界面遮罩 */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(10, 10, 20, 0.7);
+            backdrop-filter: blur(8px);
+            color: white;
+            text-align: center;
+            transition: opacity 0.3s;
+            z-index: 20;
+        }
+
+        .hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* 准心 */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 14px;
+            height: 14px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border: 2px solid rgba(0,0,0,0.3);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 10;
+            box-shadow: 0 0 6px #fff;
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            color: #ff88cc;
+            text-shadow: 0 0 20px #ff00aa, 2px 2px 0 #fff;
+            margin-bottom: 10px;
+            font-family: 'Comic Sans MS', cursive, sans-serif;
+            letter-spacing: 2px;
+        }
+
+        p {
+            font-size: 1.2rem;
+            color: #ddeeff;
+            text-shadow: 0 0 5px #00aaff;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .key {
+            display: inline-block;
+            background: linear-gradient(to bottom, #fff, #eee);
+            color: #333;
+            border-radius: 6px;
+            padding: 2px 8px;
+            margin: 0 3px;
+            font-weight: bold;
+            box-shadow: 0 3px 0 #bbb;
+            border: 1px solid #ccc;
+            font-size: 1rem;
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #ff5f6d, #ffc371);
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            color: white;
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 0 20px rgba(255, 95, 109, 0.6);
+            transition: all 0.2s;
+            outline: none;
+            margin-top: 20px;
+        }
+        .btn:hover { 
+            transform: scale(1.05); 
+            box-shadow: 0 0 30px rgba(255, 95, 109, 0.8);
+        }
+
+        /* HUD */
+        #score-hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #fff;
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-shadow: 0 0 10px #000;
+            pointer-events: none;
+            display: none;
+            background: rgba(255, 255, 255, 0.15);
+            padding: 10px 25px;
+            border-radius: 30px;
+            border: 2px solid rgba(255,255,255,0.4);
+        }
+
+        /* 消息提示 Toast */
+        #toast {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 255, 255, 0.8);
+            color: #000;
+            padding: 10px 30px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 1.2rem;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 30;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="crosshair"></div>
+    <div id="canvas-container"></div>
+
+    <div id="score-hud">
+        🚀 高度: <span id="hud-height">0</span> m
+    </div>
+
+    <div id="toast">存档成功！</div>
+
+    <!-- 开始菜单 -->
+    <div id="start-screen" class="overlay">
+        <h1>🍬 梦幻跑酷 V2 🍬</h1>
+        <p>
+            <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> 移动<br>
+            <span class="key">Space</span> 跳跃 (按两次二段跳)<br>
+            <span class="key">R</span> 存档 &nbsp;&nbsp; <span class="key">T</span> 读档
+        </p>
+        <button class="btn" id="start-btn">开始冒险</button>
+    </div>
+
+    <!-- 死亡菜单 -->
+    <div id="game-over-screen" class="overlay hidden">
+        <h1 style="color: #00ffff; text-shadow: 0 0 20px #00ffff;">✨ 坠入星河 ✨</h1>
+        <p style="font-size: 1.5rem;">本次到达高度: <span id="final-score" style="color:#ffcc00; font-weight:bold;">0</span> m</p>
+        <button class="btn" id="restart-btn">从头开始</button>
+        <p style="font-size: 0.9rem; margin-top: 15px; opacity: 0.8;">提示: 游戏中按 T 可以直接读取之前的存档哦</p>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- 核心参数 ---
+        const PLAYER_HEIGHT = 2.4; 
+        const GRAVITY = 25.0; 
+        const JUMP_FORCE = 16.0; 
+        const MOVE_SPEED = 14.0;
+
+        // --- 全局变量 ---
+        let camera, scene, renderer;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        
+        // 跳跃相关
+        let isGrounded = false;
+        let jumpCount = 0; // 0: 地面, 1: 一段跳, 2: 二段跳已用
+        
+        let velocity = new THREE.Vector3();
+        let direction = new THREE.Vector3();
+        let prevTime = performance.now();
+        let isLocked = false;
+        let isGameActive = false;
+        let maxHeightReached = 0;
+
+        const platforms = [];
+        let skyMesh;
+
+        // --- UI 元素 ---
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const scoreHud = document.getElementById('score-hud');
+        const hudHeight = document.getElementById('hud-height');
+        const startBtn = document.getElementById('start-btn');
+        const restartBtn = document.getElementById('restart-btn');
+        const toast = document.getElementById('toast');
+
+        init();
+        animate();
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0b1026);
+            scene.fog = new THREE.FogExp2(0x0b1026, 0.01);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            setupLights();
+            createEnvironment();
+            generateLevel();
+            resetPlayer();
+            setupEvents();
+        }
+
+        function setupLights() {
+            const hemiLight = new THREE.HemisphereLight(0xffeeb1, 0x080820, 0.8);
+            scene.add(hemiLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            dirLight.position.set(50, 100, 50);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            dirLight.shadow.camera.top = 100;
+            dirLight.shadow.camera.bottom = -100;
+            dirLight.shadow.camera.left = -100;
+            dirLight.shadow.camera.right = 100;
+            scene.add(dirLight);
+        }
+
+        function createEnvironment() {
+            // 星星粒子
+            const starGeo = new THREE.BufferGeometry();
+            const starCount = 6000;
+            const starPos = new Float32Array(starCount * 3);
+            const starColors = new Float32Array(starCount * 3);
+
+            for(let i=0; i<starCount*3; i+=3) {
+                const r = 200 + Math.random() * 400;
+                const theta = 2 * Math.PI * Math.random();
+                const phi = Math.acos(2 * Math.random() - 1);
+                starPos[i] = r * Math.sin(phi) * Math.cos(theta);
+                starPos[i+1] = r * Math.sin(phi) * Math.sin(theta);
+                starPos[i+2] = r * Math.cos(phi);
+
+                const colorVar = Math.random();
+                if(colorVar > 0.9) { starColors[i]=1; starColors[i+1]=0.9; starColors[i+2]=0.5; }
+                else if(colorVar > 0.7) { starColors[i]=0.5; starColors[i+1]=0.9; starColors[i+2]=1; }
+                else if(colorVar > 0.5) { starColors[i]=1; starColors[i+1]=0.6; starColors[i+2]=0.8; }
+                else { starColors[i]=1; starColors[i+1]=1; starColors[i+2]=1; }
+            }
+            starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+            starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+
+            const starMat = new THREE.PointsMaterial({
+                size: 1.5, vertexColors: true, transparent: true, opacity: 0.9, sizeAttenuation: true
+            });
+            const stars = new THREE.Points(starGeo, starMat);
+            scene.add(stars);
+
+            // 银河背景
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            const grad = ctx.createLinearGradient(0, 0, 0, 512);
+            grad.addColorStop(0, '#000000');
+            grad.addColorStop(0.4, '#1a0b2e');
+            grad.addColorStop(0.6, '#0b1a2e');
+            grad.addColorStop(1, '#000000');
+            ctx.fillStyle = grad; ctx.fillRect(0,0,512,512);
+            ctx.fillStyle = 'rgba(255,255,255,0.05)';
+            for(let i=0; i<1000; i++) ctx.fillRect(Math.random()*512, Math.random()*512, 2, 2);
+
+            const skyTex = new THREE.CanvasTexture(canvas);
+            const skyGeo = new THREE.SphereGeometry(800, 32, 32);
+            const skyMat = new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false });
+            skyMesh = new THREE.Mesh(skyGeo, skyMat);
+            scene.add(skyMesh);
+
+            // 底部云海
+            const cloudGeo = new THREE.PlaneGeometry(1000, 1000);
+            const cloudMat = new THREE.MeshBasicMaterial({
+                color: 0xffffff, transparent: true, opacity: 0.4, side: THREE.DoubleSide
+            });
+            const cloud = new THREE.Mesh(cloudGeo, cloudMat);
+            cloud.rotation.x = -Math.PI / 2;
+            cloud.position.y = -20;
+            scene.add(cloud);
+        }
+
+        function generateLevel() {
+            createPlatform(0, 0, 0, 10, 10, 0x8B4513);
+
+            let y = 0;
+            let angle = 0;
+            let radius = 12;
+            
+            const matWafer = new THREE.MeshStandardMaterial({ color: 0xFF69B4, roughness: 0.6 });
+            const matCookie = new THREE.MeshStandardMaterial({ color: 0xFFD700, roughness: 0.8 });
+            const matMallow = new THREE.MeshStandardMaterial({ color: 0x00BFFF, roughness: 0.3 });
+
+            for (let i = 0; i < 80; i++) {
+                if (i === 0) y += 2.0;
+                else y += 2.0 + Math.random() * 1.5;
+                
+                angle += 0.5 + Math.random() * 0.2;
+                const r = radius + Math.sin(i * 0.3) * 4;
+                const x = Math.cos(angle) * r;
+                const z = Math.sin(angle) * r;
+                const type = Math.random();
+                
+                if (type < 0.4) {
+                    const w = 3 + Math.random();
+                    const d = 3 + Math.random();
+                    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, 0.5, d), matWafer.clone());
+                    mesh.material.color.setHSL(Math.random(), 0.8, 0.6);
+                    mesh.position.set(x, y, z);
+                    addPlatform(mesh, w, d);
+                } else if (type < 0.7) {
+                    const size = 3.5 + Math.random();
+                    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(size/2, size/2, 0.4, 16), matCookie.clone());
+                    mesh.material.color.setHSL(Math.random(), 0.8, 0.6);
+                    mesh.position.set(x, y, z);
+                    addPlatform(mesh, size, size);
+                } else {
+                    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 1.2, 16), matMallow.clone());
+                    mesh.material.color.setHSL(Math.random(), 0.8, 0.8);
+                    mesh.position.set(x, y, z);
+                    addPlatform(mesh, 3.6, 3.6);
+                }
+            }
+
+            const goalGeo = new THREE.BoxGeometry(3, 3, 3);
+            const goalMat = new THREE.MeshStandardMaterial({ 
+                color: 0xffd700, emissive: 0xffaa00, emissiveIntensity: 1 
+            });
+            const goal = new THREE.Mesh(goalGeo, goalMat);
+            goal.position.set(Math.cos(angle)*radius, y + 3, Math.sin(angle)*radius);
+            goal.userData = { isGoal: true };
+            scene.add(goal);
+            platforms.push(goal);
+
+            const light = new THREE.PointLight(0xffd700, 2, 20);
+            light.position.copy(goal.position);
+            scene.add(light);
+        }
+
+        function createPlatform(x, y, z, w, d, color) {
+            const geo = new THREE.BoxGeometry(w, 0.5, d);
+            const mat = new THREE.MeshStandardMaterial({ color: color });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y, z);
+            addPlatform(mesh, w, d);
+        }
+
+        function addPlatform(mesh, w, d) {
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            let h = 0.5;
+            if (mesh.geometry.type.includes("Cylinder") || mesh.geometry.parameters.height) {
+                h = mesh.geometry.parameters.height || 0.5;
+            }
+            mesh.userData = {
+                minX: mesh.position.x - w/2, maxX: mesh.position.x + w/2,
+                minZ: mesh.position.z - d/2, maxZ: mesh.position.z + d/2,
+                surfaceY: mesh.position.y + h/2
+            };
+            scene.add(mesh);
+            platforms.push(mesh);
+        }
+
+        // --- 功能逻辑 ---
+
+        function showToast(msg) {
+            toast.innerText = msg;
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateX(-50%) translateY(0)';
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(-50%) translateY(20px)';
+            }, 2000);
+        }
+
+        function saveGame() {
+            if (!isGameActive) return;
+            const data = {
+                pos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+                rot: { x: camera.rotation.x, y: camera.rotation.y }
+            };
+            localStorage.setItem('candy_parkour_save', JSON.stringify(data));
+            showToast("💾 存档成功！");
+        }
+
+        function loadGame() {
+            if (!isGameActive) return;
+            const dataStr = localStorage.getItem('candy_parkour_save');
+            if (dataStr) {
+                const data = JSON.parse(dataStr);
+                camera.position.set(data.pos.x, data.pos.y, data.pos.z);
+                camera.rotation.x = data.rot.x;
+                camera.rotation.y = data.rot.y;
+                velocity.set(0, 0, 0); // 重置速度防止保留之前的惯性
+                showToast("📂 读档成功！");
+            } else {
+                showToast("⚠️ 没有找到存档！");
+            }
+        }
+
+        function setupEvents() {
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space') e.preventDefault();
+
+                if (isGameActive && isLocked) {
+                    switch(e.code) {
+                        case 'KeyR': saveGame(); break;
+                        case 'KeyT': loadGame(); break;
+                    }
+                }
+
+                switch(e.code) {
+                    case 'KeyW': moveForward = true; break;
+                    case 'KeyS': moveBackward = true; break;
+                    case 'KeyA': moveLeft = true; break;
+                    case 'KeyD': moveRight = true; break;
+                    case 'Space': 
+                        if (isLocked && isGameActive) {
+                            // 跳跃逻辑：0->1段，1->2段
+                            if (isGrounded) {
+                                velocity.y = JUMP_FORCE;
+                                isGrounded = false;
+                                jumpCount = 1;
+                            } else if (jumpCount === 1) {
+                                // 二段跳：高度为一段的 1/2 左右
+                                // h = v^2/2g => v = sqrt(2gh). 
+                                // 如果要 h2 = 0.5 * h1, 则 v2 = v1 * sqrt(0.5) ≈ 0.707 * v1
+                                velocity.y = JUMP_FORCE * 0.75; // 给0.75手感稍微好一点点
+                                jumpCount = 2;
+                            }
+                        }
+                        break;
+                }
+            });
+
+            document.addEventListener('keyup', (e) => {
+                switch(e.code) {
+                    case 'KeyW': moveForward = false; break;
+                    case 'KeyS': moveBackward = false; break;
+                    case 'KeyA': moveLeft = false; break;
+                    case 'KeyD': moveRight = false; break;
+                }
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isLocked) return;
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x -= e.movementY * 0.002;
+                camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+                camera.rotation.order = "YXZ";
+            });
+
+            startBtn.addEventListener('click', () => {
+                document.body.requestPointerLock();
+                startBtn.blur();
+            });
+
+            restartBtn.addEventListener('click', () => {
+                resetPlayer();
+                document.body.requestPointerLock();
+                restartBtn.blur();
+            });
+
+            document.addEventListener('pointerlockchange', () => {
+                if (document.pointerLockElement === document.body) {
+                    isLocked = true;
+                    isGameActive = true;
+                    startScreen.classList.add('hidden');
+                    gameOverScreen.classList.add('hidden');
+                    scoreHud.style.display = 'block';
+                } else {
+                    isLocked = false;
+                    if (isGameActive) {
+                        startScreen.classList.remove('hidden');
+                        startBtn.innerText = "继续游戏";
+                    }
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function resetPlayer() {
+            velocity.set(0, 0, 0);
+            camera.position.set(0, 6, 0); 
+            camera.rotation.set(0, 0, 0);
+            moveForward = moveBackward = moveLeft = moveRight = false;
+            isGrounded = false;
+            jumpCount = 0;
+            isGameActive = true;
+            maxHeightReached = 0;
+            hudHeight.innerText = "0";
+            gameOverScreen.classList.add('hidden');
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            const delta = Math.min((time - prevTime) / 1000, 0.05);
+            prevTime = time;
+
+            if (skyMesh) skyMesh.rotation.y += 0.0005;
+
+            if (isGameActive && isLocked) {
+                // 阻力
+                velocity.x -= velocity.x * 8.0 * delta;
+                velocity.z -= velocity.z * 8.0 * delta;
+                velocity.y -= GRAVITY * delta;
+
+                // 移动计算
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize();
+
+                if (moveForward || moveBackward) velocity.z -= direction.z * MOVE_SPEED * 4.0 * delta;
+                // 修复：这里之前是 -=, 导致D键(moveRight=1)使 velocity.x 变负(向左)
+                // 现在改为 +=, D键(moveRight=1) -> velocity.x 变正 -> 向右
+                if (moveLeft || moveRight) velocity.x += direction.x * MOVE_SPEED * 4.0 * delta;
+
+                const camDir = new THREE.Vector3();
+                camera.getWorldDirection(camDir);
+                const forward = new THREE.Vector3(camDir.x, 0, camDir.z).normalize();
+                const right = new THREE.Vector3(-forward.z, 0, forward.x);
+
+                const moveX = (forward.x * -velocity.z + right.x * velocity.x) * delta;
+                const moveZ = (forward.z * -velocity.z + right.z * velocity.x) * delta;
+
+                camera.position.x += moveX;
+                camera.position.z += moveZ;
+                camera.position.y += velocity.y * delta;
+
+                checkCollisions();
+
+                if (camera.position.y < -30) die();
+
+                if (camera.position.y > maxHeightReached) maxHeightReached = camera.position.y;
+                hudHeight.innerText = Math.floor(Math.max(0, camera.position.y - 6));
+
+                platforms.forEach(p => {
+                    if (p.userData.isGoal) {
+                        p.rotation.x += 0.01;
+                        p.rotation.y += 0.02;
+                        if (camera.position.distanceTo(p.position) < 4) die(true);
+                    }
+                });
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function checkCollisions() {
+            const footY = camera.position.y - PLAYER_HEIGHT;
+            let hit = false;
+
+            for (const p of platforms) {
+                const d = p.userData;
+                if (d.isGoal) continue;
+
+                if (camera.position.x > d.minX - 0.5 && camera.position.x < d.maxX + 0.5 &&
+                    camera.position.z > d.minZ - 0.5 && camera.position.z < d.maxZ + 0.5) {
+                    
+                    const dist = footY - d.surfaceY;
+                    if (velocity.y <= 0 && dist < 0.5 && dist > -0.8) {
+                        hit = true;
+                        velocity.y = 0;
+                        camera.position.y = d.surfaceY + PLAYER_HEIGHT;
+                        break;
+                    }
+                }
+            }
+            
+            // 状态更新
+            if (hit) {
+                isGrounded = true;
+                jumpCount = 0; // 落地重置跳跃次数
+            } else {
+                isGrounded = false;
+                // 如果是从平台走下来（而不是跳下来的），算作已经用掉一次跳跃机会（防止空中无限跳）
+                if (jumpCount === 0) jumpCount = 1;
+            }
+        }
+
+        function die(win = false) {
+            isGameActive = false;
+            document.exitPointerLock();
+            
+            const score = Math.floor(maxHeightReached - 6);
+            document.getElementById('final-score').innerText = score > 0 ? score : 0;
+            
+            const h1 = gameOverScreen.querySelector('h1');
+            if (win) {
+                h1.innerText = "🎉 登顶成功！ 🎉";
+                h1.style.color = "#ffff00";
+            } else {
+                h1.innerText = "✨ 坠入星河 ✨";
+                h1.style.color = "#00ffff";
+            }
+            
+            gameOverScreen.classList.remove('hidden');
+            scoreHud.style.display = 'none';
+        }
+    </script>
+</body>
+</html>

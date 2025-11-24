@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>毁灭大炮 - 终极加强版</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Segoe UI', sans-serif; user-select: none; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+
+        /* 准心 */
+        #crosshair-container {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            pointer-events: none; display: flex; align-items: center; justify-content: center;
+            opacity: 0.5;
+        }
+        #crosshair-dot {
+            width: 4px; height: 4px; background: #00ff00; border-radius: 50%;
+        }
+        #crosshair-circle {
+            position: absolute; width: 40px; height: 40px;
+            border: 1px dashed rgba(255, 255, 255, 0.3); border-radius: 50%;
+        }
+
+        /* UI */
+        #game-ui {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: none;
+        }
+        
+        #score-panel {
+            position: absolute; top: 20px; left: 20px;
+            color: #fff; font-size: 1.5rem; font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+        }
+        #score-val { color: #ffaa00; font-size: 2.5rem; }
+
+        #controls-hint {
+            position: absolute; top: 20px; right: 20px; text-align: right;
+            color: #aaa; font-size: 0.9rem; line-height: 1.6;
+            background: rgba(0,0,0,0.6); padding: 15px; border-radius: 8px;
+        }
+        .key { color: #fff; font-weight: bold; background: #444; padding: 0 5px; border-radius: 3px; }
+
+        #weapon-status {
+            position: absolute; bottom: 30px; right: 30px;
+            text-align: right; display: flex; flex-direction: column; gap: 5px;
+        }
+        .weapon-card {
+            background: rgba(0,0,0,0.6); padding: 10px 20px;
+            color: #666; border-right: 4px solid #333; transition: all 0.2s;
+            font-family: 'Consolas', monospace;
+        }
+        .weapon-card.active {
+            background: rgba(0,50,0,0.8); color: #fff; border-right: 4px solid #00ff00;
+            transform: translateX(-10px); font-size: 1.1rem;
+        }
+
+        #charge-bar-container {
+            position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%);
+            width: 200px; height: 8px; background: #333; border-radius: 4px; 
+            opacity: 0; transition: opacity 0.2s;
+        }
+        #charge-bar { width: 0%; height: 100%; background: linear-gradient(90deg, #ffaa00, #ff0000); }
+
+        /* 菜单 */
+        .overlay-menu {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(10, 10, 15, 0.92); z-index: 100;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            backdrop-filter: blur(5px);
+        }
+        #pause-menu { display: none; z-index: 110; } 
+
+        h1 { font-size: 4rem; color: #ffaa00; margin-bottom: 10px; font-style: italic; text-shadow: 0 0 20px #ff5500; }
+        
+        #total-stats {
+            color: #aaa; font-size: 1.2rem; margin-bottom: 30px; letter-spacing: 1px;
+            background: rgba(255, 255, 255, 0.05); padding: 10px 20px; border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #total-count { color: #fff; font-weight: bold; font-size: 1.4rem; margin-left: 10px; }
+
+        .btn-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 20px; pointer-events: auto; max-width: 800px; }
+        .btn {
+            background: #222; color: #fff; border: 2px solid #555;
+            padding: 15px 30px; font-size: 1.1rem; cursor: pointer;
+            transition: all 0.1s; text-transform: uppercase; font-weight: bold;
+            min-width: 160px;
+        }
+        .btn:hover { background: #fff; color: #000; border-color: #fff; transform: scale(1.05); box-shadow: 0 0 15px rgba(255,255,255,0.3); }
+        .btn-danger { border-color: #a33; color: #faa; }
+        .btn-danger:hover { background: #d33; color: #fff; }
+
+        /* 关卡难度颜色标记 */
+        .lvl-easy { border-bottom: 3px solid #4f4; }
+        .lvl-med { border-bottom: 3px solid #fa0; }
+        .lvl-hard { border-bottom: 3px solid #f44; }
+        .lvl-insane { border-bottom: 3px solid #a0f; }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <!-- 主菜单 -->
+    <div id="main-menu" class="overlay-menu">
+        <h1>CANNON SMASH</h1>
+        <div id="total-stats">
+            生涯累计击倒: <span id="total-count">0</span> 块
+        </div>
+        <p style="color:#888; letter-spacing: 2px; margin-bottom:10px;">选择你的目标</p>
+        <div class="btn-grid">
+            <!-- 原有地图 -->
+            <button class="btn lvl-easy" onclick="startGame('pyramid')">1. 巨型金字塔</button>
+            <button class="btn lvl-easy" onclick="startGame('wall')">2. 泰坦城墙</button>
+            <button class="btn lvl-med" onclick="startGame('towers')">3. 通天双塔</button>
+            <button class="btn lvl-med" onclick="startGame('colosseum')">4. 斗兽场</button>
+            <button class="btn lvl-med" onclick="startGame('jenga')">5. 层层叠</button>
+            
+            <!-- 新增地图 -->
+            <button class="btn lvl-hard" onclick="startGame('fortress')">6. 战争堡垒</button>
+            <button class="btn lvl-hard" onclick="startGame('helix')">7. 双螺旋塔</button>
+            <button class="btn lvl-hard" onclick="startGame('bridge')">8. 伦敦大桥</button>
+            <button class="btn lvl-insane" onclick="startGame('metropolis')">9. 立体都市</button>
+        </div>
+    </div>
+
+    <!-- 暂停菜单 -->
+    <div id="pause-menu" class="overlay-menu">
+        <h1 style="font-size: 3rem; color: #fff;">已暂停</h1>
+        <div style="display: flex; flex-direction: column; gap: 20px; pointer-events: auto;">
+            <button class="btn" onclick="resumeGame()">继续破坏</button>
+            <button class="btn btn-danger" onclick="quitToMenu()">返回主菜单</button>
+        </div>
+    </div>
+
+    <!-- 游戏 HUD -->
+    <div id="game-ui">
+        <div id="crosshair-container">
+            <div id="crosshair-dot"></div>
+            <div id="crosshair-circle"></div>
+        </div>
+
+        <div id="score-panel">本局击倒: <span id="score-val">0</span></div>
+        
+        <div id="controls-hint">
+            <span class="key">1-4</span> 换枪<br>
+            <span class="key">LMB</span> 射击/蓄力<br>
+            <span class="key">RMB</span> 观察<br>
+            <span class="key">滚轮</span> 缩放<br>
+            <span class="key">ESC</span> 暂停
+        </div>
+
+        <div id="charge-bar-container"><div id="charge-bar"></div></div>
+
+        <div id="weapon-status">
+            <div class="weapon-card active" id="card-1">1. 重型加农炮</div>
+            <div class="weapon-card" id="card-2">2. 动能步枪</div>
+            <div class="weapon-card" id="card-3">3. 加特林机枪</div>
+            <div class="weapon-card" id="card-4">4. 榴弹迫击炮</div>
+        </div>
+    </div>
+
+    <!-- 库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+
+    <script>
+        // --- 配置 ---
+        const CONFIG = {
+            gravity: -30,
+            step: 1/60,
+            maxScoreY: 0.5
+        };
+
+        const WEAPONS = {
+            // offset: 炮口生成距离
+            1: { name: 'Cannon',  type: 'charge',   mass: 200,  speed: 50,  radius: 2.0, color: 0x111111, glowColor: 0xff5500, trail: false, offset: 9 },
+            2: { name: 'Sniper',  type: 'instant',  mass: 80,   speed: 100, radius: 0.5, color: 0x88ffff, glowColor: 0x00ffff, trail: true,  offset: 11 },
+            3: { name: 'Minigun', type: 'auto',     mass: 50,   speed: 100, radius: 0.4, color: 0xffcc00, glowColor: 0xffaa00, trail: true,  offset: 9, rate: 8 },
+            4: { name: 'Mortar',  type: 'charge',   mass: 100,  speed: 50,  radius: 1.5, color: 0x880000, glowColor: 0xff0000, trail: false, offset: 7, explode: true }
+        };
+
+        // --- 全局变量 ---
+        let world, scene, camera, renderer;
+        let gameState = 'MENU'; 
+        let isLocked = false; 
+        
+        let turretBase, turretPivot, gunMount, currentWeaponMesh, minigunGroup;
+        let projectiles = [];
+        let blocks = [];
+        let score = 0;
+        let totalDestroyed = 0; // 累计击倒
+        
+        let currentWeaponId = 1;
+        let isMouseDown = false;
+        let isRightDown = false;
+        let chargePower = 0;
+        let lastFireTime = 0;
+
+        // 摄像机
+        let camPitch = 0.3; 
+        let camYaw = Math.PI; 
+        let camDistance = 50; 
+
+        // UI
+        const uiMainMenu = document.getElementById('main-menu');
+        const uiPauseMenu = document.getElementById('pause-menu');
+        const uiGame = document.getElementById('game-ui');
+        const elScore = document.getElementById('score-val');
+        const elTotalCount = document.getElementById('total-count');
+        const elCharge = document.getElementById('charge-bar');
+        const elChargeCont = document.getElementById('charge-bar-container');
+        const weaponCards = document.querySelectorAll('.weapon-card');
+
+        window.onload = () => { init(); animate(); };
+
+        function init() {
+            // 读取本地存储
+            totalDestroyed = parseInt(localStorage.getItem('cannonSmashTotal') || '0');
+            elTotalCount.innerText = totalDestroyed;
+
+            // 1. 物理世界
+            world = new CANNON.World();
+            world.gravity.set(0, CONFIG.gravity, 0);
+            world.broadphase = new CANNON.SAPBroadphase(world);
+            world.solver.iterations = 20;
+            world.allowSleep = true;
+            
+            const defMat = new CANNON.Material();
+            const contact = new CANNON.ContactMaterial(defMat, defMat, { friction: 0.5, restitution: 0.1 });
+            world.addContactMaterial(contact);
+
+            // 2. 渲染
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050510);
+            scene.fog = new THREE.Fog(0x050510, 50, 400);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
+            updateCamera();
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // 3. 场景
+            createEnvironment();
+            createTurret();
+            switchWeaponModel(1);
+
+            // 4. 事件
+            setupInputs();
+            window.addEventListener('resize', onResize);
+        }
+
+        function createEnvironment() {
+            const body = new CANNON.Body({ mass: 0 });
+            body.addShape(new CANNON.Plane());
+            body.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
+            body.collisionFilterGroup = 1; 
+            world.addBody(body);
+
+            const grid = new THREE.GridHelper(500, 100, 0x444444, 0x1a1a1a);
+            scene.add(grid);
+            const plane = new THREE.Mesh(new THREE.PlaneGeometry(500,500), new THREE.MeshStandardMaterial({color:0x0a0a0a, roughness:0.9}));
+            plane.rotation.x = -Math.PI/2; plane.position.y = -0.1; plane.receiveShadow = true;
+            scene.add(plane);
+            
+            const amb = new THREE.AmbientLight(0x555555);
+            scene.add(amb);
+            const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+            dir.position.set(100, 150, 100);
+            dir.castShadow = true;
+            dir.shadow.mapSize.set(2048, 2048);
+            dir.shadow.camera.left = -100; dir.shadow.camera.right = 100;
+            dir.shadow.camera.top = 100; dir.shadow.camera.bottom = -100;
+            scene.add(dir);
+        }
+
+        function createTurret() {
+            const matBase = new THREE.MeshStandardMaterial({color: 0x333});
+            
+            turretBase = new THREE.Group();
+            turretBase.position.set(0, 0, 60); 
+            scene.add(turretBase);
+
+            const base = new THREE.Mesh(new THREE.CylinderGeometry(5, 6, 2, 16), matBase);
+            base.position.y = 1; base.castShadow = true;
+            turretBase.add(base);
+
+            turretPivot = new THREE.Group();
+            turretPivot.position.y = 2;
+            turretBase.add(turretPivot);
+
+            const pivot = new THREE.Mesh(new THREE.BoxGeometry(6, 2, 6), matBase);
+            pivot.position.y = 1; pivot.castShadow = true;
+            turretPivot.add(pivot);
+
+            gunMount = new THREE.Group();
+            gunMount.position.set(0, 3, 0);
+            turretPivot.add(gunMount);
+        }
+
+        function switchWeaponModel(id) {
+            if(currentWeaponMesh) gunMount.remove(currentWeaponMesh);
+            minigunGroup = null;
+            currentWeaponMesh = new THREE.Group();
+            gunMount.add(currentWeaponMesh);
+            
+            const matMetal = new THREE.MeshStandardMaterial({color: 0x666, metalness:0.7, roughness:0.3});
+
+            if(id === 1) { // Cannon
+                const t = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.8, 10, 16), matMetal);
+                t.rotateX(-Math.PI/2); t.translateY(3); t.castShadow = true;
+                currentWeaponMesh.add(t);
+            } else if(id === 2) { // Sniper
+                const t = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 12), matMetal);
+                t.position.z = -4; t.castShadow = true;
+                currentWeaponMesh.add(t);
+            } else if(id === 3) { // Minigun
+                const base = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 4), new THREE.MeshStandardMaterial({color:0x222}));
+                base.rotateX(-Math.PI/2); base.position.z = 0;
+                currentWeaponMesh.add(base);
+                minigunGroup = new THREE.Group();
+                currentWeaponMesh.add(minigunGroup);
+                for(let i=0; i<6; i++) {
+                    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 10), matMetal);
+                    t.rotateX(-Math.PI/2); t.translateY(4);
+                    const a = (i/6)*Math.PI*2;
+                    t.position.set(Math.cos(a), Math.sin(a), 0);
+                    minigunGroup.add(t);
+                }
+            } else if(id === 4) { // Mortar
+                const t = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.0, 6, 16), matMetal);
+                t.rotateX(-Math.PI/2); t.translateY(2);
+                currentWeaponMesh.add(t);
+            }
+        }
+
+        // --- 输入与控制 ---
+        function setupInputs() {
+            document.addEventListener('pointerlockchange', () => {
+                isLocked = (document.pointerLockElement === document.body);
+                if (!isLocked && gameState === 'PLAYING') {
+                    pauseGame();
+                }
+            });
+
+            document.addEventListener('mousemove', e => {
+                if(!isLocked) return;
+                const sens = 0.0025; 
+                camYaw -= e.movementX * sens;
+                camPitch += e.movementY * sens; 
+                camPitch = Math.max(-0.5, Math.min(1.5, camPitch));
+
+                if (!isRightDown) {
+                    turretPivot.rotation.y = camYaw - Math.PI;
+                    gunMount.rotation.x = (camPitch - 0.3) * 1.2; 
+                    gunMount.rotation.x = Math.max(-0.5, Math.min(1.4, gunMount.rotation.x));
+                }
+                updateCamera();
+            });
+
+            document.addEventListener('wheel', e => {
+                if(!isLocked) return;
+                camDistance += e.deltaY * 0.05;
+                camDistance = Math.max(15, Math.min(100, camDistance));
+                updateCamera();
+            });
+
+            document.addEventListener('mousedown', e => {
+                if(gameState !== 'PLAYING') return;
+                if(e.button === 0) { 
+                    if(!isLocked) { document.body.requestPointerLock(); return; }
+                    isMouseDown = true;
+                    const w = WEAPONS[currentWeaponId];
+                    if(w.type === 'instant') fire();
+                    if(w.type === 'charge') { chargePower = 0; elChargeCont.style.opacity = 1; }
+                }
+                if(e.button === 2) isRightDown = true;
+            });
+
+            document.addEventListener('mouseup', e => {
+                if(e.button === 0) {
+                    isMouseDown = false;
+                    const w = WEAPONS[currentWeaponId];
+                    if(w.type === 'charge' && isLocked) {
+                        fire();
+                        elChargeCont.style.opacity = 0;
+                        currentWeaponMesh.position.z = 0;
+                    }
+                }
+                if(e.button === 2) {
+                    isRightDown = false;
+                    camYaw = turretPivot.rotation.y + Math.PI;
+                    updateCamera();
+                }
+            });
+
+            document.addEventListener('keydown', e => {
+                if(gameState === 'PLAYING') {
+                    if(e.key >= '1' && e.key <= '4') switchWeapon(parseInt(e.key));
+                    if(e.code === 'KeyR') startGame(window.currLevel);
+                }
+            });
+            document.addEventListener('contextmenu', e => e.preventDefault());
+        }
+
+        function updateCamera() {
+            if(!turretBase) return;
+            const center = turretBase.position.clone();
+            center.y += 5; 
+            const hDist = camDistance * Math.cos(camPitch);
+            const y = center.y + camDistance * Math.sin(camPitch);
+            const x = center.x + hDist * Math.sin(camYaw);
+            const z = center.z + hDist * Math.cos(camYaw);
+            camera.position.set(x, y, z);
+            camera.lookAt(center);
+        }
+
+        function switchWeapon(id) {
+            currentWeaponId = id;
+            switchWeaponModel(id);
+            weaponCards.forEach(c => c.classList.remove('active'));
+            document.getElementById('card-'+id).classList.add('active');
+        }
+
+        function fire() {
+            currentWeaponMesh.updateMatrixWorld(true);
+            const w = WEAPONS[currentWeaponId];
+
+            const muzzlePos = new THREE.Vector3(0, 0, -w.offset);
+            muzzlePos.applyMatrix4(currentWeaponMesh.matrixWorld);
+
+            const quat = new THREE.Quaternion();
+            currentWeaponMesh.getWorldQuaternion(quat);
+            const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(quat).normalize();
+
+            const shape = new CANNON.Sphere(w.radius);
+            const body = new CANNON.Body({ mass: w.mass });
+            body.addShape(shape);
+            body.position.copy(muzzlePos);
+            body.ccdSpeedThreshold = 1; 
+            body.ccdIterations = 10;
+            
+            body.collisionFilterGroup = 2; 
+            body.collisionFilterMask = 1;  
+
+            if (w.trail) body.isStraight = true;
+            if (w.explode) {
+                body.isBomb = true;
+                body.addEventListener("collide", e => {
+                    if(!body.exploded) {
+                        body.exploded = true;
+                        setTimeout(()=>explode(body.position), 50);
+                        setTimeout(()=>removeProjectile(body, mesh), 100);
+                    }
+                });
+            }
+
+            world.addBody(body);
+
+            let mesh = new THREE.Group();
+            
+            let coreGeom;
+            if(w.trail) {
+                coreGeom = new THREE.CylinderGeometry(w.radius, w.radius, 8, 6);
+                coreGeom.rotateX(Math.PI/2);
+            } else {
+                coreGeom = new THREE.SphereGeometry(w.radius, 16, 16);
+            }
+            const coreMesh = new THREE.Mesh(coreGeom, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+            mesh.add(coreMesh);
+            
+            let glowGeom = w.trail ? 
+                new THREE.CylinderGeometry(w.radius*1.5, w.radius*1.5, 9, 6) :
+                new THREE.SphereGeometry(w.radius*1.4, 16, 16);
+            if(w.trail) glowGeom.rotateX(Math.PI/2);
+
+            const glowMesh = new THREE.Mesh(glowGeom, new THREE.MeshBasicMaterial({
+                color: w.glowColor, transparent: true, opacity: 0.5, side: THREE.BackSide
+            }));
+            mesh.add(glowMesh);
+
+            mesh.position.copy(muzzlePos);
+            mesh.quaternion.copy(quat);
+            scene.add(mesh);
+            projectiles.push({body, mesh});
+
+            let speed = w.speed * 2; 
+            if(w.type === 'charge') speed += chargePower * 5;
+            body.velocity.set(dir.x * speed, dir.y * speed, dir.z * speed);
+
+            currentWeaponMesh.position.z = 1.0;
+            const flash = new THREE.PointLight(0xffaa00, 5, 20);
+            flash.position.copy(muzzlePos);
+            scene.add(flash);
+            setTimeout(()=>scene.remove(flash), 60);
+        }
+
+        function explode(pos) {
+            const p = new THREE.Mesh(new THREE.SphereGeometry(2,16,16), new THREE.MeshBasicMaterial({color:0xff5500, transparent:true}));
+            p.position.copy(pos); scene.add(p);
+            let s=1;
+            const t=setInterval(()=>{ s*=1.2; p.scale.set(s,s,s); p.material.opacity=5/s; if(s>20){clearInterval(t);scene.remove(p)}}, 20);
+            
+            blocks.forEach(b => {
+                const dist = b.body.position.distanceTo(pos);
+                if(dist < 25) {
+                    b.body.wakeUp();
+                    const dir = b.body.position.vsub(pos); dir.normalize();
+                    const f = 2000 * (1 - dist/25);
+                    b.body.applyImpulse(dir.scale(f), b.body.position);
+                }
+            });
+        }
+
+        function update() {
+            const w = WEAPONS[currentWeaponId];
+
+            if(isMouseDown && w.type === 'charge' && !isRightDown) {
+                chargePower = Math.min(chargePower+1.5, 100);
+                elCharge.style.width = chargePower+'%';
+                currentWeaponMesh.position.x = (Math.random()-0.5)*0.05;
+            }
+            if(isMouseDown && w.type === 'auto' && !isRightDown) {
+                if(minigunGroup) minigunGroup.rotation.z += 0.5;
+                const now = Date.now();
+                if(now - lastFireTime > 1000/w.rate) {
+                    fire(); lastFireTime = now;
+                    currentWeaponMesh.position.z = (Math.random()-0.5)*0.1;
+                }
+            }
+            if(currentWeaponMesh && !isMouseDown) {
+                currentWeaponMesh.position.z *= 0.8; 
+                currentWeaponMesh.position.x = 0;
+            }
+
+            for(let i=projectiles.length-1; i>=0; i--) {
+                const p = projectiles[i];
+                if(p.body.isStraight) {
+                    p.body.force.y -= CONFIG.gravity * p.body.mass;
+                    p.body.linearDamping = 0;
+                    const v = new THREE.Vector3(p.body.velocity.x, p.body.velocity.y, p.body.velocity.z);
+                    if(v.lengthSq()>1) p.mesh.lookAt(p.mesh.position.clone().add(v));
+                } else {
+                    p.mesh.quaternion.copy(p.body.quaternion);
+                }
+                p.mesh.position.copy(p.body.position);
+                if(p.body.position.distanceTo(new CANNON.Vec3(0,0,0)) > 400) removeProjectile(p.body, p.mesh);
+            }
+
+            let blocksFallenThisFrame = 0;
+            blocks.forEach(b => {
+                b.mesh.position.copy(b.body.position);
+                b.mesh.quaternion.copy(b.body.quaternion);
+                if(!b.fallen && (b.body.position.y < 0.5 || Math.abs(b.body.position.x)>45 || Math.abs(b.body.position.z)>45)) {
+                    b.fallen = true; 
+                    score++; 
+                    elScore.innerText = score;
+                    b.mesh.material.color.setHex(0x555555); // 变灰表示死亡
+                    blocksFallenThisFrame++;
+                }
+            });
+
+            // 更新累计分数
+            if(blocksFallenThisFrame > 0) {
+                totalDestroyed += blocksFallenThisFrame;
+                localStorage.setItem('cannonSmashTotal', totalDestroyed);
+            }
+        }
+
+        function removeProjectile(body, mesh) {
+            world.removeBody(body);
+            scene.remove(mesh);
+            const idx = projectiles.findIndex(p=>p.body===body);
+            if(idx>-1) projectiles.splice(idx,1);
+        }
+
+        // --- 流程 ---
+        window.startGame = function(type) {
+            window.currLevel = type;
+            gameState = 'PLAYING';
+            uiMainMenu.style.display = 'none';
+            uiPauseMenu.style.display = 'none';
+            uiGame.style.display = 'block';
+            score=0; elScore.innerText=0;
+            document.body.requestPointerLock();
+            loadLevel(type);
+        };
+
+        function pauseGame() {
+            gameState = 'PAUSED';
+            uiPauseMenu.style.display = 'flex';
+        }
+
+        window.resumeGame = function() {
+            gameState = 'PLAYING';
+            uiPauseMenu.style.display = 'none';
+            document.body.requestPointerLock();
+        }
+
+        window.quitToMenu = function() {
+            gameState = 'MENU';
+            document.exitPointerLock();
+            uiPauseMenu.style.display = 'none';
+            uiGame.style.display = 'none';
+            uiMainMenu.style.display = 'flex';
+            // 更新主页分数
+            elTotalCount.innerText = totalDestroyed;
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth/window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function loadLevel(type) {
+            projectiles.forEach(p=>removeProjectile(p.body,p.mesh));
+            blocks.forEach(b=>{world.removeBody(b.body);scene.remove(b.mesh)}); blocks=[];
+            
+            const colors = [0xffaa00, 0x00aaff, 0xff4444, 0xaa00ff, 0x44ff44];
+            
+            if(type==='pyramid') {
+                const s=6; for(let y=0;y<12;y++) for(let x=0;x<12-y;x++) createBlock((x-(12-y-1)/2)*s, s/2+y*s, 0, s,s,s, 0xffaa00);
+            }
+            else if(type==='wall') {
+                const s=5; for(let y=0;y<12;y++) for(let x=-8;x<=8;x++) createBlock(x*s, s/2+y*s, 0, s,s,s, (x+y)%2?0xcc5555:0x994444);
+            }
+            else if(type==='towers') {
+                const s=6; [-15,15].forEach(ox=>{ for(let y=0;y<18;y++) { createBlock(ox-s/2, s/2+y*s, -s/2, s,s,s, 0x4488ff); createBlock(ox+s/2, s/2+y*s, -s/2, s,s,s, 0x4488ff); createBlock(ox-s/2, s/2+y*s, s/2, s,s,s, 0x4488ff); createBlock(ox+s/2, s/2+y*s, s/2, s,s,s, 0x4488ff); }});
+            }
+            else if(type==='colosseum') {
+                const r=30, s=5, n=30; for(let y=0;y<8;y++) for(let i=0;i<n;i++) { const a=i/n*Math.PI*2; const x=Math.cos(a)*r, z=Math.sin(a)*r; createBlock(x, s/2+y*s, z, s,s,s, 0xeeeeee); }
+            }
+            else if(type==='jenga') {
+                const s=4, l=12; for(let y=0;y<20;y++) { const odd=y%2!==0; for(let i=0;i<3;i++) { let x=odd?0:(i-1)*s, z=odd?(i-1)*s:0; createBlock(x, s/2+y*s, z, odd?l:s, s, odd?s:l, 0xd2b48c); } }
+            }
+            // --- 新增关卡 ---
+            else if(type==='fortress') {
+                // 6. 战争堡垒
+                const s=5; 
+                // 围墙
+                for(let y=0; y<8; y++) {
+                    for(let x=-4; x<=4; x++) {
+                        createBlock(x*s, s/2+y*s, -20, s,s,s, 0x888888);
+                        createBlock(x*s, s/2+y*s, 20, s,s,s, 0x888888);
+                    }
+                    for(let z=-3; z<=3; z++) {
+                        createBlock(-20, s/2+y*s, z*s, s,s,s, 0x888888);
+                        createBlock(20, s/2+y*s, z*s, s,s,s, 0x888888);
+                    }
+                }
+                // 塔楼
+                [-20, 20].forEach(x => [-20, 20].forEach(z => {
+                    for(let y=0; y<12; y++) createBlock(x, s/2+y*s, z, s,s,s, 0x555555);
+                }));
+            }
+            else if(type==='helix') {
+                // 7. 双螺旋塔
+                const s=4, r=15;
+                for(let i=0; i<60; i++) {
+                    const angle = i * 0.3;
+                    const y = s/2 + i * (s*0.8); // 稍微重叠
+                    // 链 A
+                    createBlock(Math.cos(angle)*r, y, Math.sin(angle)*r, s,s,s, 0x00ffaa);
+                    // 链 B
+                    createBlock(Math.cos(angle+Math.PI)*r, y, Math.sin(angle+Math.PI)*r, s,s,s, 0xff00aa);
+                    // 连接杆
+                    if(i%2===0) {
+                       const dx = Math.cos(angle)*r * 0.5;
+                       const dz = Math.sin(angle)*r * 0.5;
+                       createBlock(dx, y, dz, r, s/2, s/2, 0xffffff);
+                       createBlock(-dx, y, -dz, r, s/2, s/2, 0xffffff);
+                    }
+                }
+            }
+            else if(type==='bridge') {
+                // 8. 伦敦大桥
+                const s=5;
+                // 两个桥塔
+                [-25, 25].forEach(x => {
+                    for(let y=0; y<15; y++) {
+                         createBlock(x, s/2+y*s, -8, s,s,s, 0x556677);
+                         createBlock(x, s/2+y*s, 8, s,s,s, 0x556677);
+                    }
+                    // 顶部连接
+                    createBlock(x, s/2+14*s, 0, s, s, 16, 0x556677);
+                });
+                // 桥面
+                for(let x=-40; x<=40; x+=5) {
+                    createBlock(x, s*3, 0, s*1.1, 2, 12, 0x333333);
+                }
+            }
+            else if(type==='metropolis') {
+                // 9. 立体都市 (最复杂)
+                const s=4;
+                for(let x=-2; x<=2; x++) {
+                    for(let z=-2; z<=2; z++) {
+                        // 随机高度的大楼
+                        const h = 10 + Math.floor(Math.random() * 15);
+                        const color = colors[Math.floor(Math.random()*colors.length)];
+                        const spacing = 12;
+                        for(let y=0; y<h; y++) {
+                            createBlock(x*spacing, s/2+y*s, z*spacing, s,s,s, color);
+                        }
+                    }
+                }
+            }
+        }
+
+        function createBlock(x,y,z,w,h,d,color) {
+            const body = new CANNON.Body({mass: 5}); 
+            body.addShape(new CANNON.Box(new CANNON.Vec3(w/2,h/2,d/2)));
+            body.position.set(x,y,z); body.sleep(); world.addBody(body);
+            
+            // 关键：设置组1，并允许与炮弹(2)和环境(1)碰撞
+            body.collisionFilterGroup = 1; 
+            body.collisionFilterMask = 1 | 2;
+
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color}));
+            mesh.castShadow=true; mesh.receiveShadow=true; scene.add(mesh);
+            blocks.push({body,mesh,fallen:false});
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if(gameState === 'PLAYING') {
+                world.step(CONFIG.step);
+                update();
+                renderer.render(scene, camera);
+            }
+        }
+    </script>
+</body>
+</html>

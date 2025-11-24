@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>汐凪的3D推箱子 (Final Pure 9) (≧◡≦)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0b0b10;
+            color: white;
+            user-select: none;
+        }
+        #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 游戏 HUD */
+        #game-hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: none;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .header-box {
+            background: rgba(20, 20, 30, 0.85);
+            padding: 15px 25px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            pointer-events: auto;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+        h1 {
+            margin: 0;
+            font-size: 28px;
+            background: linear-gradient(to right, #00ffff, #ff00ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+            letter-spacing: 1px;
+        }
+        .level-info { font-size: 18px; color: #ddd; margin-top: 5px; }
+        .controls-hint { 
+            font-size: 14px; color: #aaa; text-align: right; line-height: 1.8; 
+        }
+        .key {
+            display: inline-block; background: #333; color: #fff;
+            padding: 2px 6px; border-radius: 4px; border: 1px solid #555;
+            margin: 0 2px; font-family: monospace; font-weight: bold;
+            font-size: 12px;
+            box-shadow: 0 2px 0 #111;
+        }
+
+        /* 全屏菜单 */
+        .menu-screen {
+            position: absolute;
+            background: rgba(15, 15, 25, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 50px;
+            border-radius: 30px;
+            text-align: center;
+            border: 2px solid #444;
+            box-shadow: 0 0 80px rgba(0, 255, 255, 0.15);
+            pointer-events: auto;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            min-width: 500px;
+            z-index: 100;
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+        /* 关卡选择网格 */
+        .level-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin: 30px 0;
+            max-height: 60vh;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        .level-grid::-webkit-scrollbar { width: 8px; }
+        .level-grid::-webkit-scrollbar-track { background: #222; border-radius: 4px; }
+        .level-grid::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+
+        .level-btn {
+            background: linear-gradient(135deg, #2a2a2a, #333);
+            border: 2px solid #555;
+            color: #aaa;
+            width: 70px; height: 70px;
+            border-radius: 15px;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex; justify-content: center; align-items: center;
+            position: relative;
+        }
+        .level-btn:hover {
+            transform: translateY(-3px);
+            border-color: #00ffff;
+            color: white;
+            background: #444;
+            box-shadow: 0 5px 15px rgba(0, 255, 255, 0.3);
+        }
+        .level-btn.cleared {
+            border-color: #00ff00;
+            color: #00ff00;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.1);
+        }
+        .level-btn.cleared::after {
+            content: '★';
+            position: absolute;
+            top: -5px; right: -5px;
+            font-size: 14px;
+            color: #ffd700;
+            text-shadow: 0 0 5px #ffaa00;
+        }
+
+        /* 按钮 */
+        .action-btn {
+            background: linear-gradient(45deg, #00c6ff, #0072ff);
+            border: none;
+            padding: 12px 40px;
+            color: white;
+            font-size: 18px;
+            border-radius: 25px;
+            cursor: pointer;
+            margin: 10px;
+            font-weight: bold;
+            transition: all 0.2s;
+            min-width: 160px;
+            box-shadow: 0 4px 15px rgba(0, 114, 255, 0.4);
+        }
+        .action-btn:hover { 
+            transform: scale(1.05); 
+            box-shadow: 0 6px 20px rgba(0, 114, 255, 0.6);
+        }
+        .action-btn.secondary {
+            background: linear-gradient(45deg, #444, #666);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+        }
+        .action-btn.secondary:hover {
+            background: linear-gradient(45deg, #555, #777);
+        }
+
+        #home-screen { display: flex; }
+
+        #loading {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            display: flex; justify-content: center; align-items: center;
+            z-index: 999;
+            transition: opacity 0.5s;
+            font-size: 24px; color: #00ffff; font-weight: bold;
+            letter-spacing: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading">LOADING...</div>
+    <div id="game-container"></div>
+
+    <div id="ui-layer">
+        
+        <!-- 游戏 HUD -->
+        <div id="game-hud">
+            <div class="header-box">
+                <h1>🧩 SOKOBAN 3D</h1>
+                <div class="level-info">LEVEL <span id="hud-level-num" style="color:#00ffff">1</span></div>
+            </div>
+            <div class="header-box controls-hint">
+                <span class="key">WASD</span> 移动<br>
+                <span class="key">Z</span> 撤销 <span class="key">R</span> 重置<br>
+                <span class="key">ESC</span> 菜单 <span class="key">拖拽</span> 视角
+            </div>
+        </div>
+
+        <!-- 1. 主页 -->
+        <div id="home-screen" class="menu-screen">
+            <h1 style="font-size: 48px; margin-bottom: 10px;">✨ 关卡选择 ✨</h1>
+            <p style="color: #aaa;">欧尼酱，剩下的都是好玩的关卡喵！</p>
+            
+            <div class="level-grid" id="level-buttons"></div>
+            
+            <p style="font-size: 12px; color: #555; margin-top: 10px;">Tips: 通关后会有星星标记哦！</p>
+        </div>
+
+        <!-- 2. 暂停菜单 -->
+        <div id="pause-menu" class="menu-screen">
+            <h1 style="color: #fff;">⏸️ 暂停</h1>
+            <button class="action-btn" onclick="togglePause()">继续游戏</button>
+            <button class="action-btn secondary" onclick="restartLevel()">重置本关</button>
+            <button class="action-btn secondary" onclick="goHome()">返回主页</button>
+        </div>
+
+        <!-- 3. 胜利界面 -->
+        <div id="win-screen" class="menu-screen" style="border-color: #00ff00;">
+            <h1 style="font-size: 60px; margin-bottom: 10px;">🎉</h1>
+            <h2 style="color: #00ff00; margin: 0;">LEVEL CLEAR!</h2>
+            <p style="color: #ddd; margin: 20px 0;">欧尼酱的智慧真是太耀眼了喵！</p>
+            <div style="display: flex; gap: 15px;">
+                <button class="action-btn secondary" onclick="goHome()">返回主页</button>
+                <button class="action-btn" onclick="nextLevel()">下一关 ➔</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"></script>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let currentLevelIndex = 0;
+        let isGameActive = false;
+        let isPaused = false;
+        let isMoving = false;
+        let history = [];
+        
+        let meshes = { player: null, boxes: [], targets: [], walls: [], floors: [] };
+        let currentMap = [];
+        let playerPos = { x: 0, z: 0 };
+        
+        let clearedLevels = new Set();
+
+        // --- 关卡设计 (已移除 Level 8 双子塔, 共9关) ---
+        const levels = [
+            // 1. 教学关
+            [
+                "WWWWWW",
+                "W....W",
+                "W.P..W",
+                "W.B..W",
+                "W.T..W",
+                "WWWWWW"
+            ],
+            // 2. 简单的弯道
+            [
+                "WWWWWWWW",
+                "W..T...W",
+                "W..B...W",
+                "WWWW.P.W",
+                "W..B...W",
+                "W..T...W",
+                "WWWWWWWW"
+            ],
+            // 3. 修复版 (3箱 3靶)
+            [
+                "WWWWWWW",
+                "W..T..W",
+                "W.B.B.W", 
+                "W..P..W",
+                "W.B.T.W", 
+                "W..T..W", 
+                "WWWWWWW"
+            ],
+            // 4. (原 Level 5) 十字路口
+            [
+               "WWWWWWWW",
+               "W..P...W",
+               "W.BB...W",
+               "W.W.W..W",
+               "W.W.W..W",
+               "W.T.T..W",
+               "W......W",
+               "WWWWWWWW"
+            ],
+            // 5. (原 Level 6) 狭路相逢
+            [
+                "WWWWWWWW",
+                "W.T..T.W",
+                "W.B..B.W",
+                "WWW..WWW",
+                "W..P...W",
+                "W......W",
+                "WWWWWWWW"
+            ],
+            // 6. (原 Level 8) 回形针
+            [
+                "WWWWWWWWW",
+                "W..T..T.W",
+                "W.W.W.W.W",
+                "W.W.B.W.W",
+                "W.W.B.W.W",
+                "W.P.....W",
+                "WWWWWWWWW"
+            ],
+            // 7. (原 Level 9) 爱心
+            [
+                ".WW...WW.",
+                "W..W.W..W",
+                "W.T.B.T.W",
+                "W..B.B..W",
+                ".W..P..W.",
+                "..W...W..",
+                "...WWW..."
+            ],
+            // *已删除原 Level 10 (双子塔)*
+            
+            // 8. (原 Level 11) 迷宫
+            [
+                "WWWWWWWWW",
+                "W...W...W",
+                "W.B.W.B.W",
+                "W.T...T.W",
+                "WWWW.WWWW",
+                "W.T...T.W",
+                "W.B.P.B.W",
+                "W...W...W",
+                "WWWWWWWWW"
+            ],
+            // 9. (原 Level 12) 最终试炼
+            [
+                "WWWWWWWWWWW",
+                "W....T....W",
+                "W.WW.W.WW.W",
+                "W.B..B..B.W",
+                "W....P....W",
+                "W.B..B..B.W",
+                "W.WW.W.WW.W",
+                "W....T....W",
+                "WWWWWWWWWWW"
+            ]
+        ];
+
+        const TILE_SIZE = 2;
+        const colors = {
+            wall: 0x333333, floor: 0x151515, target: 0x00ff00, 
+            box: 0x00ffff, boxOnTarget: 0xff00ff, player: 0xffaa00
+        };
+
+        init();
+
+        function init() {
+            const container = document.getElementById('game-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0b0b10);
+            scene.fog = new THREE.Fog(0x0b0b10, 10, 60);
+            
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 15, 10); 
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.enablePan = false;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(10, 20, 15);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            scene.add(dirLight);
+
+            initHomeButtons();
+
+            document.getElementById('loading').style.opacity = 0;
+            setTimeout(() => document.getElementById('loading').style.display = 'none', 500);
+
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('keydown', onKeyDown);
+            
+            animate();
+        }
+
+        function initHomeButtons() {
+            const grid = document.getElementById('level-buttons');
+            grid.innerHTML = '';
+            levels.forEach((level, index) => {
+                const btn = document.createElement('div');
+                btn.className = 'level-btn';
+                if (clearedLevels.has(index)) btn.classList.add('cleared');
+                btn.innerText = index + 1;
+                btn.onclick = () => startGame(index);
+                grid.appendChild(btn);
+            });
+        }
+
+        window.startGame = function(index) {
+            currentLevelIndex = index;
+            document.getElementById('home-screen').style.display = 'none';
+            document.getElementById('win-screen').style.display = 'none';
+            document.getElementById('pause-menu').style.display = 'none';
+            document.getElementById('game-hud').style.display = 'flex';
+            
+            isGameActive = true;
+            isPaused = false;
+            loadLevel(currentLevelIndex);
+        }
+
+        window.goHome = function() {
+            isGameActive = false;
+            isPaused = false;
+            document.getElementById('game-hud').style.display = 'none';
+            document.getElementById('pause-menu').style.display = 'none';
+            document.getElementById('win-screen').style.display = 'none';
+            document.getElementById('home-screen').style.display = 'flex';
+            renderLevelButtons(); 
+            clearScene();
+            gsap.to(camera.position, {x: 10, y: 15, z: 10, duration: 1.5});
+            gsap.to(controls.target, {x: 0, y: 0, z: 0, duration: 1.5});
+        }
+
+        function renderLevelButtons() {
+            const grid = document.getElementById('level-buttons');
+            if(!grid) return;
+            Array.from(grid.children).forEach((btn, idx) => {
+                if (clearedLevels.has(idx)) btn.classList.add('cleared');
+            });
+        }
+
+        window.togglePause = function() {
+            if (!isGameActive || document.getElementById('win-screen').style.display === 'flex') return;
+            isPaused = !isPaused;
+            document.getElementById('pause-menu').style.display = isPaused ? 'flex' : 'none';
+        }
+
+        window.restartLevel = function() {
+            window.startGame(currentLevelIndex);
+        }
+
+        window.nextLevel = function() {
+            if (currentLevelIndex + 1 < levels.length) {
+                window.startGame(currentLevelIndex + 1);
+            } else {
+                alert("🎉 哇！欧尼酱已经全部通关啦！太强了喵！");
+                window.goHome();
+            }
+        }
+
+        function parseLevel(levelIdx) {
+            const layout = levels[levelIdx];
+            const height = layout.length;
+            const width = layout[0].length;
+            const mapData = [];
+            
+            for (let z = 0; z < height; z++) {
+                const row = [];
+                for (let x = 0; x < width; x++) {
+                    const char = layout[z][x] || '.';
+                    let type = 0; 
+                    if (char === 'W') type = 1;
+                    else if (char === 'P') { type = 2; playerPos = {x, z}; }
+                    else if (char === 'B') type = 3;
+                    else if (char === 'T') type = 4; 
+                    row.push(type);
+                }
+                mapData.push(row);
+            }
+            return { mapData, width, height };
+        }
+
+        function getBaseType(x, z) {
+            const layout = levels[currentLevelIndex];
+            if (!layout[z] || !layout[z][x]) return 0;
+            const char = layout[z][x];
+            if (char === 'T' || char === '*' || char === '+') return 4; 
+            if (char === 'W') return 1; 
+            return 0; 
+        }
+
+        function loadLevel(index) {
+            clearScene();
+            document.getElementById('hud-level-num').innerText = index + 1;
+            
+            const parsed = parseLevel(index);
+            currentMap = parsed.mapData;
+            history = [];
+            
+            const offsetX = (parsed.width * TILE_SIZE) / 2 - TILE_SIZE / 2;
+            const offsetZ = (parsed.height * TILE_SIZE) / 2 - TILE_SIZE / 2;
+
+            for (let z = 0; z < parsed.height; z++) {
+                for (let x = 0; x < parsed.width; x++) {
+                    const type = currentMap[z][x];
+                    const posX = x * TILE_SIZE - offsetX;
+                    const posZ = z * TILE_SIZE - offsetZ;
+                    const rawChar = levels[index][z][x];
+
+                    if (type !== -1) {
+                        const floor = new THREE.Mesh(
+                            new THREE.BoxGeometry(TILE_SIZE, 0.2, TILE_SIZE),
+                            new THREE.MeshStandardMaterial({ color: colors.floor, roughness: 0.8 })
+                        );
+                        floor.position.set(posX, -0.1, posZ);
+                        floor.receiveShadow = true;
+                        scene.add(floor);
+                        meshes.floors.push(floor);
+                    }
+
+                    if (type === 1) {
+                        const wall = new THREE.Mesh(
+                            new THREE.BoxGeometry(TILE_SIZE, TILE_SIZE, TILE_SIZE),
+                            new THREE.MeshStandardMaterial({ color: colors.wall })
+                        );
+                        wall.position.set(posX, TILE_SIZE / 2, posZ);
+                        wall.castShadow = true;
+                        wall.receiveShadow = true;
+                        scene.add(wall);
+                        meshes.walls.push(wall);
+                    }
+
+                    if (rawChar === 'T' || rawChar === '*' || rawChar === '+') { 
+                        const target = new THREE.Mesh(
+                            new THREE.CylinderGeometry(TILE_SIZE * 0.3, TILE_SIZE * 0.3, 0.1, 16),
+                            new THREE.MeshBasicMaterial({ color: colors.target, transparent: true, opacity: 0.5 })
+                        );
+                        target.position.set(posX, 0.05, posZ);
+                        scene.add(target);
+                        meshes.targets.push({ mesh: target, x, z });
+                    }
+
+                    if (type === 3 || rawChar === '*') {
+                        createBox(posX, posZ, x, z);
+                        if (rawChar === '*') currentMap[z][x] = 5; 
+                    }
+
+                    if (type === 2 || rawChar === '+') {
+                        createPlayer(posX, posZ);
+                    }
+                }
+            }
+            
+            const maxSize = Math.max(parsed.width, parsed.height);
+            gsap.to(camera.position, { x: 0, y: maxSize * 1.5 + 2, z: maxSize + 2, duration: 1 });
+            gsap.to(controls.target, { x: 0, y: 0, z: 0, duration: 1 });
+            
+            updateBoxColors(); 
+        }
+
+        function createBox(wx, wz, lx, lz) {
+            const box = new THREE.Mesh(
+                new THREE.BoxGeometry(TILE_SIZE * 0.8, TILE_SIZE * 0.8, TILE_SIZE * 0.8),
+                new THREE.MeshStandardMaterial({ color: colors.box, emissive: 0x004444, roughness: 0.2 })
+            );
+            box.position.set(wx, TILE_SIZE / 2, wz);
+            box.castShadow = true;
+            box.receiveShadow = true;
+            scene.add(box);
+            meshes.boxes.push({ mesh: box, x: lx, z: lz });
+        }
+
+        function createPlayer(wx, wz) {
+            const group = new THREE.Group();
+            const body = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.5, 0.6, 1.5, 16),
+                new THREE.MeshStandardMaterial({ color: colors.player })
+            );
+            body.position.y = 0.75;
+            group.add(body);
+            
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.15), eyeMat);
+            leftEye.position.set(-0.2, 1.2, 0.4);
+            const rightEye = new THREE.Mesh(new THREE.SphereGeometry(0.15), eyeMat);
+            rightEye.position.set(0.2, 1.2, 0.4);
+            group.add(leftEye, rightEye);
+
+            group.position.set(wx, 0, wz);
+            group.castShadow = true;
+            scene.add(group);
+            meshes.player = group;
+        }
+
+        function clearScene() {
+            meshes.walls.forEach(m => scene.remove(m));
+            meshes.floors.forEach(m => scene.remove(m));
+            meshes.targets.forEach(t => scene.remove(t.mesh));
+            meshes.boxes.forEach(b => scene.remove(b.mesh));
+            if (meshes.player) scene.remove(meshes.player);
+            
+            meshes.walls = [];
+            meshes.floors = [];
+            meshes.targets = [];
+            meshes.boxes = [];
+            meshes.player = null;
+        }
+
+        function saveHistory() {
+            const snapshot = {
+                map: JSON.parse(JSON.stringify(currentMap)),
+                player: { ...playerPos },
+                boxes: JSON.parse(JSON.stringify(meshes.boxes.map(b => ({x: b.x, z: b.z}))))
+            };
+            history.push(snapshot);
+            if (history.length > 50) history.shift();
+        }
+
+        function undo() {
+            if (isMoving || history.length === 0) return;
+            const lastState = history.pop();
+            
+            currentMap = lastState.map;
+            playerPos = lastState.player;
+            
+            const parsed = parseLevel(currentLevelIndex);
+            const offsetX = (parsed.width * TILE_SIZE)/2 - TILE_SIZE/2;
+            const offsetZ = (parsed.height * TILE_SIZE)/2 - TILE_SIZE/2;
+
+            gsap.to(meshes.player.position, {
+                x: playerPos.x * TILE_SIZE - offsetX,
+                z: playerPos.z * TILE_SIZE - offsetZ,
+                duration: 0.2
+            });
+
+            lastState.boxes.forEach((savedBox, i) => {
+                meshes.boxes[i].x = savedBox.x;
+                meshes.boxes[i].z = savedBox.z;
+                gsap.to(meshes.boxes[i].mesh.position, {
+                    x: savedBox.x * TILE_SIZE - offsetX,
+                    z: savedBox.z * TILE_SIZE - offsetZ,
+                    duration: 0.2
+                });
+            });
+            updateBoxColors();
+        }
+
+        function move(dx, dz) {
+            if (isMoving || isPaused || !isGameActive) return;
+
+            const newX = playerPos.x + dx;
+            const newZ = playerPos.z + dz;
+            
+            if (newZ < 0 || newZ >= currentMap.length || newX < 0 || newX >= currentMap[0].length) return;
+            
+            const targetCell = currentMap[newZ][newX];
+            if (targetCell === 1) return; 
+
+            let canMove = false;
+            let pushBox = false;
+
+            if (targetCell === 0 || targetCell === 4 || targetCell === 2) {
+                canMove = true;
+            } 
+            else if (targetCell === 3 || targetCell === 5) {
+                const boxNextX = newX + dx;
+                const boxNextZ = newZ + dz;
+                
+                if (boxNextZ < 0 || boxNextZ >= currentMap.length || boxNextX < 0 || boxNextX >= currentMap[0].length) return;
+                
+                const boxNextCell = currentMap[boxNextZ][boxNextX];
+                if (boxNextCell === 0 || boxNextCell === 4 || boxNextCell === 2) {
+                    canMove = true;
+                    pushBox = true;
+                }
+            }
+
+            if (canMove) {
+                saveHistory();
+                isMoving = true;
+                const duration = 0.15;
+                const parsed = parseLevel(currentLevelIndex);
+                const offsetX = (parsed.width * TILE_SIZE)/2 - TILE_SIZE/2;
+                const offsetZ = (parsed.height * TILE_SIZE)/2 - TILE_SIZE/2;
+
+                currentMap[playerPos.z][playerPos.x] = getBaseType(playerPos.x, playerPos.z);
+
+                if (pushBox) {
+                    const boxObj = meshes.boxes.find(b => b.x === newX && b.z === newZ);
+                    if (boxObj) {
+                        boxObj.x += dx;
+                        boxObj.z += dz;
+                        const baseType = getBaseType(newX + dx, newZ + dz);
+                        currentMap[newZ + dz][newX + dx] = (baseType === 4) ? 5 : 3;
+
+                        gsap.to(boxObj.mesh.position, {
+                            x: boxObj.x * TILE_SIZE - offsetX,
+                            z: boxObj.z * TILE_SIZE - offsetZ,
+                            duration: duration
+                        });
+                    }
+                }
+
+                currentMap[newZ][newX] = 2; 
+                playerPos.x = newX;
+                playerPos.z = newZ;
+
+                let angle = meshes.player.rotation.y;
+                if (dx === 1) angle = Math.PI / 2;
+                if (dx === -1) angle = -Math.PI / 2;
+                if (dz === 1) angle = 0;
+                if (dz === -1) angle = Math.PI;
+                
+                gsap.to(meshes.player.rotation, { y: angle, duration: 0.1 });
+                gsap.to(meshes.player.position, {
+                    x: playerPos.x * TILE_SIZE - offsetX,
+                    z: playerPos.z * TILE_SIZE - offsetZ,
+                    duration: duration,
+                    onComplete: () => {
+                        isMoving = false;
+                        updateBoxColors();
+                        checkWin();
+                    }
+                });
+            }
+        }
+
+        function updateBoxColors() {
+            meshes.boxes.forEach(box => {
+                const onTarget = meshes.targets.some(t => t.x === box.x && t.z === box.z);
+                const color = new THREE.Color(onTarget ? colors.boxOnTarget : colors.box);
+                const emissive = new THREE.Color(onTarget ? 0xff00ff : 0x004444);
+                
+                gsap.to(box.mesh.material.color, { r: color.r, g: color.g, b: color.b, duration: 0.2 });
+                gsap.to(box.mesh.material.emissive, { r: emissive.r, g: emissive.g, b: emissive.b, duration: 0.2 });
+                
+                if (onTarget) {
+                    box.mesh.material.emissiveIntensity = 1;
+                } else {
+                    box.mesh.material.emissiveIntensity = 0.5;
+                }
+            });
+        }
+
+        function checkWin() {
+            let matchCount = 0;
+            meshes.targets.forEach(t => {
+                if (meshes.boxes.some(b => b.x === t.x && b.z === t.z)) matchCount++;
+            });
+            
+            if (matchCount === meshes.targets.length && meshes.targets.length > 0) {
+                clearedLevels.add(currentLevelIndex);
+                setTimeout(() => {
+                    document.getElementById('win-screen').style.display = 'flex';
+                }, 200);
+            }
+        }
+
+        function onKeyDown(e) {
+            if (e.code === 'Escape') {
+                if (isGameActive) togglePause();
+                return;
+            }
+            
+            if (document.getElementById('win-screen').style.display === 'flex') {
+                if (e.code === 'Enter' || e.code === 'Space') window.nextLevel();
+                return;
+            }
+
+            if (isPaused || !isGameActive) return;
+
+            switch(e.code) {
+                case 'ArrowUp': case 'KeyW': move(0, -1); break;
+                case 'ArrowDown': case 'KeyS': move(0, 1); break;
+                case 'ArrowLeft': case 'KeyA': move(-1, 0); break;
+                case 'ArrowRight': case 'KeyD': move(1, 0); break;
+                case 'KeyZ': undo(); break;
+                case 'KeyR': restartLevel(); break;
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+    </script>
+</body>
+</html>

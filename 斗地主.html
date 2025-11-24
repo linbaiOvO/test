@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>三人斗地主 (四带二修复版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #166534; /* Dark Green */ }
+        .card {
+            border: 1px solid #aaa; border-radius: 5px; padding: 8px 4px;
+            min-width: 40px; height: 60px; display: inline-flex; flex-direction: column;
+            justify-content: space-between; align-items: center; background-color: white;
+            color: black; margin: 2px; cursor: pointer; user-select: none;
+            transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+            font-size: 14px; font-weight: 500; position: relative;
+        }
+        .card.red { color: #dc2626; } .card.black { color: #1f2937; }
+        .card.selected { transform: translateY(-10px); box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+        .card .suit { font-size: 10px; }
+        .player-hand { min-height: 70px; }
+        .landlord-icon { display: inline-block; padding: 2px 6px; background-color: #f59e0b; color: white; font-size: 10px; font-weight: bold; border-radius: 4px; margin-left: 5px; }
+        .disabled-button { background-color: #9ca3af !important; cursor: not-allowed !important; }
+        .endgame-modal { background-color: rgba(0, 0, 0, 0.85); z-index: 50; }
+        .endgame-card { height: 50px; min-width: 35px; padding: 6px 3px; font-size: 12px; }
+        .endgame-card .suit { font-size: 8px; }
+        /* Card Counter Styles */
+        .card-counter span {
+            display: inline-block;
+            padding: 1px 5px;
+            margin: 1px;
+            border-radius: 3px;
+            background-color: #4b5563; /* Gray-600 */
+            min-width: 30px; /* Ensure consistent width */
+            text-align: center;
+        }
+        .card-counter .rank-joker { color: #f87171; } /* Red for Jokers */
+        .card-counter .rank-2 { color: #fbbf24; } /* Amber for 2s */
+        .card-counter .count-0 { background-color: #ef4444; color: white; } /* Red background when count is 0 */
+
+    </style>
+</head>
+<body class="p-4">
+
+    <div class="flex flex-col md:flex-row gap-4 max-w-6xl mx-auto">
+        <!-- Main Game Area -->
+        <div class="flex-grow bg-green-800 p-6 rounded-lg shadow-xl min-h-screen flex flex-col justify-between relative">
+            <!-- Top Section -->
+            <div class="flex justify-between items-start mb-4">
+                <div id="player-1" class="w-1/3 text-center text-white">
+                    <div class="font-bold mb-1">机器人 A <span id="landlord-1" class="hidden landlord-icon">地主</span></div>
+                    <div id="hand-1-count" class="mb-2">剩余牌: 17</div>
+                    <div id="played-1" class="min-h-[65px]"></div>
+                </div>
+                <div id="landlord-cards-display" class="w-1/3 text-center text-white">
+                    <div class="font-bold mb-1">底牌</div>
+                    <div id="landlord-cards" class="flex justify-center min-h-[65px]"></div>
+                </div>
+                <div id="player-2" class="w-1/3 text-center text-white">
+                    <div class="font-bold mb-1">机器人 B <span id="landlord-2" class="hidden landlord-icon">地主</span></div>
+                    <div id="hand-2-count" class="mb-2">剩余牌: 17</div>
+                    <div id="played-2" class="min-h-[65px]"></div>
+                </div>
+            </div>
+
+            <!-- Middle Section -->
+            <div id="play-area" class="text-center mb-4 min-h-[80px] flex items-center justify-center">
+                 <div id="last-played-cards" class="flex flex-wrap justify-center items-center"></div>
+                 <div id="info-panel" class="text-white text-lg font-bold"></div>
+            </div>
+
+            <!-- Bottom Section -->
+            <div id="player-0" class="text-center text-white">
+                <div id="played-0" class="min-h-[65px] mb-2"></div>
+                 <div class="player-hand mb-4 flex flex-wrap justify-center items-end" id="hand-0"></div>
+                 <div class="font-bold mb-1">你 <span id="landlord-0" class="hidden landlord-icon">地主</span></div>
+                 <div id="hand-0-count" class="mb-2">剩余牌: 17</div>
+                <div id="action-buttons" class="space-x-4">
+                     <button id="btn-bid-1" class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded hidden">1分</button>
+                     <button id="btn-bid-2" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded hidden">2分</button>
+                     <button id="btn-bid-3" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded hidden">3分</button>
+                     <button id="btn-pass-bid" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded hidden">不叫</button>
+                     <button id="btn-play" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded hidden">出牌</button>
+                     <button id="btn-pass-play" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded hidden">不出</button>
+                     <button id="btn-new-game" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">新游戏</button>
+                </div>
+            </div>
+
+            <!-- Game Over Modal -->
+             <div id="endgame-modal" class="endgame-modal absolute inset-0 flex items-center justify-center hidden">
+                 <div class="bg-green-700 p-8 rounded-lg shadow-xl text-white max-w-lg w-full">
+                     <h2 id="endgame-title" class="text-3xl font-bold text-center mb-6">游戏结束</h2>
+                     <div class="space-y-4 mb-6">
+                         <div><h3 class="font-bold mb-1">你的剩余手牌 (<span id="endgame-hand-0-count">0</span>):</h3><div id="endgame-hand-0" class="flex flex-wrap justify-center"></div></div>
+                         <div><h3 class="font-bold mb-1">机器人 A 剩余手牌 (<span id="endgame-hand-1-count">0</span>):</h3><div id="endgame-hand-1" class="flex flex-wrap justify-center"></div></div>
+                         <div><h3 class="font-bold mb-1">机器人 B 剩余手牌 (<span id="endgame-hand-2-count">0</span>):</h3><div id="endgame-hand-2" class="flex flex-wrap justify-center"></div></div>
+                     </div>
+                     <button id="btn-new-game-modal" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded">开始新游戏</button>
+                 </div>
+             </div>
+        </div>
+
+        <!-- Info Sidebar -->
+        <div class="w-full md:w-56 flex-shrink-0 bg-green-800 p-4 rounded-lg shadow-xl text-white space-y-4">
+             <div>
+                <h3 class="text-lg font-bold mb-2 text-center border-b pb-1">剩余牌张</h3>
+                <div id="card-counter" class="card-counter text-xs space-y-1">
+                    <!-- Card counter content here -->
+                </div>
+             </div>
+             <!-- Can add other info like game rules here later -->
+        </div>
+
+    </div>
+
+    <script>
+        const suits = ['♠', '♥', '♣', '♦'];
+        const ranks = ['3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A', '2'];
+        const jokers = ['BJ', 'RJ'];
+        const rankValues = { '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, 'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14, '2': 16, 'BJ': 18, 'RJ': 20 };
+        const displayRanks = ['RJ', 'BJ', '2', 'A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3']; // Order for counter display
+        
+        // (所有规则已更新)
+        const HandType = { 
+            INVALID: 0, 
+            SINGLE: 1, 
+            PAIR: 2, 
+            TRIO: 3, 
+            TRIO_SOLO: 4, 
+            TRIO_PAIR: 5, 
+            STRAIGHT: 6, 
+            STRAIGHT_PAIR: 7, 
+            PLANE_NO_KICKERS: 8, 
+            PLANE_SOLOS: 9,      // 飞机带单 (允许带对子)
+            PLANE_PAIRS: 10,     
+            BOMB: 11,            
+            ROCKET: 12,          
+            FOUR_TWO_SOLOS: 13,  // 四带二 (允许带对子)
+            FOUR_TWO_PAIRS: 14   
+        };
+
+        let deck = [], hands = [[], [], []], landlordCards = [], selectedCards = [];
+        let landlord = -1, currentPlayer = -1, currentBid = 0, bidTurn = -1;
+        let playersPassedBid = [false, false, false];
+        let lastValidPlayedHand = { player: -1, cards: [], type: HandType.INVALID, value: 0 };
+        let currentTurnPassCount = 0, gamePhase = 'idle', animationFrameId = null;
+        let remainingCards = {}; // For card counter
+
+        const handElements = [document.getElementById('hand-0'), null, null];
+        const handCountElements = [document.getElementById('hand-0-count'), document.getElementById('hand-1-count'), document.getElementById('hand-2-count')];
+        const landlordIcons = [document.getElementById('landlord-0'), document.getElementById('landlord-1'), document.getElementById('landlord-2')];
+        const infoPanel = document.getElementById('info-panel'), landlordCardsEl = document.getElementById('landlord-cards');
+        const lastPlayedCardsEl = document.getElementById('last-played-cards'), actionButtons = document.getElementById('action-buttons');
+        const btnNewGame = document.getElementById('btn-new-game'), btnPlay = document.getElementById('btn-play'), btnPassPlay = document.getElementById('btn-pass-play');
+        const playedElements = [document.getElementById('played-0'), document.getElementById('played-1'), document.getElementById('played-2')];
+        const endgameModal = document.getElementById('endgame-modal'), endgameTitle = document.getElementById('endgame-title');
+        const endgameHands = [document.getElementById('endgame-hand-0'), document.getElementById('endgame-hand-1'), document.getElementById('endgame-hand-2')];
+        const endgameCounts = [document.getElementById('endgame-hand-0-count'), document.getElementById('endgame-hand-1-count'), document.getElementById('endgame-hand-2-count')];
+        const btnNewGameModal = document.getElementById('btn-new-game-modal');
+        const cardCounterEl = document.getElementById('card-counter');
+
+
+        // --- Card Generation and Dealing ---
+        function createDeck() {
+            deck = [];
+            suits.forEach(suit => ranks.forEach(rank => deck.push({ rank, suit, value: rankValues[rank], id: `${suit}${rank}` })));
+            deck.push({ rank: 'BJ', suit: 'Joker', value: rankValues['BJ'], id: 'BJ' });
+            deck.push({ rank: 'RJ', suit: 'Joker', value: rankValues['RJ'], id: 'RJ' });
+        }
+        function shuffleDeck() { for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; } }
+        function dealCards() {
+            hands = [[], [], []]; landlordCards = [];
+            for (let i = 0; i < 51; i++) hands[i % 3].push(deck[i]);
+            landlordCards = deck.slice(51); hands.forEach(sortHand);
+        }
+        function sortHand(hand) { hand.sort((a, b) => b.value - a.value || suits.indexOf(b.suit) - suits.indexOf(a.suit)); }
+
+        // --- Card Counter Logic ---
+        function initializeCardCounter() {
+            remainingCards = {};
+            ranks.forEach(r => remainingCards[r] = 4);
+            jokers.forEach(j => remainingCards[j] = 1);
+        }
+        function updateCardCounter(cardsPlayed) {
+            cardsPlayed.forEach(card => {
+                if (remainingCards[card.rank] !== undefined) {
+                    remainingCards[card.rank]--;
+                }
+            });
+            renderCardCounter();
+        }
+        function renderCardCounter() {
+            cardCounterEl.innerHTML = '';
+            displayRanks.forEach(rank => {
+                const count = remainingCards[rank];
+                let displayRank = rank;
+                 if (rank === 'T') displayRank = '10';
+                 if (rank === 'BJ') displayRank = '小丑';
+                 if (rank === 'RJ') displayRank = '大丑';
+
+                const rankEl = document.createElement('span');
+                let rankClass = '';
+                 if (rank === 'BJ' || rank === 'RJ') rankClass = 'rank-joker';
+                 else if (rank === '2') rankClass = 'rank-2';
+
+                rankEl.className = rankClass + (count === 0 ? ' count-0' : '');
+                rankEl.innerHTML = `${displayRank}:&nbsp;${count}`;
+                cardCounterEl.appendChild(rankEl);
+            });
+        }
+
+
+        // --- UI Rendering ---
+        function renderCard(card, isPlayedCard = false, isEndgame = false) {
+            const cardEl = document.createElement('div');
+            let sizeClass = isEndgame ? 'endgame-card' : 'card';
+            cardEl.className = `${sizeClass} ${card.suit === '♥' || card.suit === '♦' || card.rank === 'RJ' ? 'red' : 'black'}`;
+            cardEl.dataset.id = card.id;
+            let rankDisplay = card.rank, suitDisplay = card.suit;
+            if (card.rank === 'BJ') { rankDisplay = '小'; suitDisplay = '丑'; cardEl.classList.remove('red'); cardEl.classList.add('black');}
+            if (card.rank === 'RJ') { rankDisplay = '大'; suitDisplay = '丑'; cardEl.classList.add('red');}
+            if (rankDisplay === 'T') rankDisplay = '10';
+            cardEl.innerHTML = `<span>${rankDisplay}</span><span class="suit">${suitDisplay}</span>`;
+            if (!isPlayedCard && !isEndgame) cardEl.onclick = () => toggleCardSelection(cardEl, card);
+            else cardEl.classList.add('cursor-default');
+            return cardEl;
+        }
+        function renderPlayerHand() {
+            const playerHandEl = handElements[0]; playerHandEl.innerHTML = '';
+            hands[0].forEach(card => { const cardEl = renderCard(card); if (selectedCards.some(sc => sc.id === card.id)) cardEl.classList.add('selected'); playerHandEl.appendChild(cardEl); });
+            updateHandCounts(); validatePlayerSelection();
+        }
+         function renderLandlordCards(showFace = false) {
+             landlordCardsEl.innerHTML = '';
+             landlordCards.forEach(card => {
+                 if (showFace) landlordCardsEl.appendChild(renderCard(card, true));
+                 else { const back = document.createElement('div'); back.className = 'card bg-blue-700 border-blue-900 w-[40px] h-[60px] cursor-default'; landlordCardsEl.appendChild(back); }
+             });
+             // (记牌器修复)
+             if(showFace) updateCardCounter(landlordCards); 
+         }
+        function updateHandCounts() { hands.forEach((hand, i) => handCountElements[i].textContent = `剩余牌: ${hand.length}`); }
+        function toggleCardSelection(cardEl, card) {
+            if (gamePhase !== 'playing' || currentPlayer !== 0) return;
+            const index = selectedCards.findIndex(sc => sc.id === card.id);
+            if (index > -1) { selectedCards.splice(index, 1); cardEl.classList.remove('selected'); }
+            else { selectedCards.push(card); cardEl.classList.add('selected'); }
+            sortHand(selectedCards); validatePlayerSelection();
+        }
+        function validatePlayerSelection() {
+            if (gamePhase !== 'playing' || currentPlayer !== 0) return;
+            const handInfo = getHandInfo(selectedCards);
+            const canPlay = handInfo.type !== HandType.INVALID && canBeat(handInfo, lastValidPlayedHand);
+            const canPass = lastValidPlayedHand.player !== -1 && lastValidPlayedHand.player !== 0;
+            btnPlay.disabled = !canPlay; btnPassPlay.disabled = !canPass;
+            btnPlay.classList.toggle('disabled-button', !canPlay); btnPassPlay.classList.toggle('disabled-button', !canPass);
+        }
+        function updateInfoPanel(message) { infoPanel.textContent = message; }
+        function showActionButtons(phase) {
+             Object.values(actionButtons.children).forEach(btn => { if(btn.id !== 'btn-new-game') btn.classList.add('hidden'); });
+             if (phase === 'bidding' && currentPlayer === 0) {
+                 document.getElementById('btn-pass-bid').classList.remove('hidden');
+                 if (currentBid < 1) document.getElementById('btn-bid-1').classList.remove('hidden');
+                 if (currentBid < 2) document.getElementById('btn-bid-2').classList.remove('hidden');
+                 document.getElementById('btn-bid-3').classList.remove('hidden');
+             } else if (phase === 'playing' && currentPlayer === 0) {
+                 btnPlay.classList.remove('hidden'); btnPassPlay.classList.remove('hidden');
+                 validatePlayerSelection();
+             }
+         }
+
+         // --- Bidding Logic ---
+         function startBidding(startPlayer) {
+            gamePhase = 'bidding'; bidTurn = startPlayer; currentPlayer = startPlayer; currentBid = 0; playersPassedBid = [false, false, false];
+            updateInfoPanel(`轮到玩家 ${currentPlayer === 0 ? '你' : (currentPlayer === 1 ? 'A' : 'B')} 叫分`);
+            if (currentPlayer === 0) showActionButtons('bidding');
+            else { showActionButtons('none'); setTimeout(aiBid, 1500); }
+         }
+         function handleBid(bid) {
+            if (gamePhase !== 'bidding' || currentPlayer !== 0) return;
+             if (bid === 3) { currentBid = 3; updateInfoPanel(`你叫了 3 分`); playersPassedBid[0] = false; }
+             else if (bid > currentBid && bid < 3) { currentBid = bid; updateInfoPanel(`你叫了 ${bid} 分`); playersPassedBid[0] = false; }
+             else if (bid === 0) { playersPassedBid[0] = true; updateInfoPanel('你选择不叫'); }
+             else { updateInfoPanel(`无效叫分，当前最高 ${currentBid} 分`); return; }
+            nextBidder();
+         }
+         function aiBid() {
+            if (gamePhase !== 'bidding' || currentPlayer === 0) return;
+            let aiDecidedBid = 0; const hand = hands[currentPlayer]; const hasRJ = hand.some(c => c.rank === 'RJ'), hasBJ = hand.some(c => c.rank === 'BJ'); const count2s = hand.filter(c => c.rank === '2').length;
+            if(hasRJ && hasBJ && currentBid < 3) aiDecidedBid = 3;
+            else if (count2s >= 2 && currentBid < 2) aiDecidedBid = Math.max(currentBid + 1, 2);
+            else if ((hasRJ || hasBJ) && count2s >= 1 && currentBid < 2) aiDecidedBid = Math.max(currentBid + 1, 2);
+            else if (count2s >= 1 && currentBid < 1) aiDecidedBid = 1;
+
+             if(aiDecidedBid > currentBid || aiDecidedBid === 3) { currentBid = aiDecidedBid; updateInfoPanel(`机器人 ${currentPlayer === 1 ? 'A' : 'B'} 叫了 ${aiDecidedBid} 分`); playersPassedBid[currentPlayer] = false; }
+             else { playersPassedBid[currentPlayer] = true; updateInfoPanel(`机器人 ${currentPlayer === 1 ? 'A' : 'B'} 不叫`); }
+            nextBidder();
+         }
+         function nextBidder() {
+             const passCount = playersPassedBid.filter(p => p).length;
+             if (currentBid === 3 || passCount >= 2) {
+                 if (currentBid > 0) {
+                     let bidder = -1;
+                     for(let i=0; i<3; ++i) { const playerIndex = (currentPlayer + 3 - i) % 3; if (!playersPassedBid[playerIndex]) { bidder = playerIndex; break; } }
+                     landlord = bidder !== -1 ? bidder : currentPlayer;
+                     determineLandlord();
+                 } else { updateInfoPanel('无人叫分，重新发牌...'); setTimeout(startGame, 2000); }
+                 return;
+             }
+            currentPlayer = (currentPlayer + 1) % 3;
+             if(playersPassedBid[currentPlayer]){ nextBidder(); return; }
+            updateInfoPanel(`轮到玩家 ${currentPlayer === 0 ? '你' : (currentPlayer === 1 ? 'A' : 'B')} 叫分 (当前叫分: ${currentBid})`);
+            if (currentPlayer === 0) showActionButtons('bidding');
+            else { showActionButtons('none'); setTimeout(aiBid, 1500 + Math.random() * 1000); }
+         }
+         function determineLandlord() {
+             updateInfoPanel(`玩家 ${landlord === 0 ? '你' : (landlord === 1 ? 'A' : 'B')} 成为地主`); landlordIcons[landlord].classList.remove('hidden');
+             hands[landlord].push(...landlordCards); sortHand(hands[landlord]); renderLandlordCards(true); // Reveal cards and update counter
+             if (landlord === 0) renderPlayerHand(); else updateHandCounts();
+             currentPlayer = landlord; startPlaying();
+         }
+
+         // --- Playing Logic ---
+         function startPlaying() {
+             gamePhase = 'playing'; lastValidPlayedHand = { player: -1, cards: [], type: HandType.INVALID, value: 0 }; currentTurnPassCount = 0;
+             updateInfoPanel(`轮到地主 ${currentPlayer === 0 ? '你' : (currentPlayer === 1 ? 'A' : 'B')} 出牌`);
+             if (currentPlayer === 0) showActionButtons('playing');
+             else { showActionButtons('none'); setTimeout(aiPlay, 2000); }
+         }
+         function handlePlay() {
+             if (gamePhase !== 'playing' || currentPlayer !== 0 || selectedCards.length === 0) return;
+             const currentHandInfo = getHandInfo(selectedCards);
+             if (currentHandInfo.type === HandType.INVALID) { updateInfoPanel("无效的出牌组合"); return; }
+             if (canBeat(currentHandInfo, lastValidPlayedHand)) playSelectedCards(currentHandInfo);
+             else updateInfoPanel("你出的牌需要大于上家出的牌");
+         }
+         function handlePass() {
+             if (gamePhase !== 'playing' || currentPlayer !== 0) return;
+             if (lastValidPlayedHand.player !== -1 && lastValidPlayedHand.player !== 0) passTurn();
+             else updateInfoPanel("你是第一个出牌或上家已跳过，不能选择不出。");
+         }
+         function playSelectedCards(handInfo) {
+             hands[0] = hands[0].filter(card => !handInfo.cards.some(sc => sc.id === card.id)); selectedCards = [];
+             lastValidPlayedHand = { ...handInfo, player: 0 }; currentTurnPassCount = 0;
+             
+             // (记牌器修复：玩家出牌时不减少计数)
+             // updateCardCounter(handInfo.cards); 
+             
+             renderPlayerHand(); renderPlayedCards(handInfo.cards, 0);
+             if (hands[0].length === 0) { gameOverWin(0); return; }
+             nextPlayer();
+         }
+         function passTurn() {
+             updateInfoPanel(`玩家 ${currentPlayer === 0 ? '你' : (currentPlayer === 1 ? 'A' : 'B')} 选择不出`); currentTurnPassCount++; renderPlayedCards([], currentPlayer);
+             if (currentTurnPassCount >= 2 && lastValidPlayedHand.player !== -1) {
+                 currentPlayer = lastValidPlayedHand.player; lastValidPlayedHand = { player: -1, cards: [], type: HandType.INVALID, value: 0 }; currentTurnPassCount = 0;
+                 updateInfoPanel(`轮到玩家 ${currentPlayer === 0 ? '你' : (currentPlayer === 1 ? 'A' : 'B')} 重新出牌`);
+             } else {
+                 currentPlayer = (currentPlayer + 1) % 3; updateInfoPanel(`轮到玩家 ${currentPlayer === 0 ? '你' : (currentPlayer === 1 ? 'A' : 'B')} 出牌`);
+             }
+             if (currentPlayer === 0) showActionButtons('playing');
+             else { showActionButtons('none'); setTimeout(aiPlay, 1500 + Math.random() * 1000); }
+         }
+         function nextPlayer() {
+             currentPlayer = (currentPlayer + 1) % 3; updateInfoPanel(`轮到玩家 ${currentPlayer === 0 ? '你' : (currentPlayer === 1 ? 'A' : 'B')} 出牌`);
+             if (currentPlayer === 0) showActionButtons('playing');
+             else { showActionButtons('none'); setTimeout(aiPlay, 1500 + Math.random() * 1000); }
+         }
+         function aiPlay() {
+             if (gamePhase !== 'playing' || currentPlayer === 0) return;
+             const hand = hands[currentPlayer]; const mustPlay = lastValidPlayedHand.player === -1 || lastValidPlayedHand.player === currentPlayer;
+             let playFound = false; let playedHandInfo = null;
+             const possiblePlays = findAllPossiblePlays(hand);
+
+             for(const potentialHandInfo of possiblePlays) {
+                 if(canBeat(potentialHandInfo, lastValidPlayedHand)) {
+                     playedHandInfo = potentialHandInfo; playFound = true; break;
+                 }
+             }
+
+             if (playFound && playedHandInfo) {
+                 hands[currentPlayer] = hands[currentPlayer].filter(card => !playedHandInfo.cards.some(pc => pc.id === card.id));
+                 lastValidPlayedHand = { ...playedHandInfo, player: currentPlayer }; currentTurnPassCount = 0;
+                 
+                 // (记牌器修复：AI出牌时减少计数)
+                 updateCardCounter(playedHandInfo.cards); 
+                 
+                 updateHandCounts(); renderPlayedCards(playedHandInfo.cards, currentPlayer);
+                 if (hands[currentPlayer].length === 0) { gameOverWin(currentPlayer); return; }
+                 nextPlayer();
+             } else {
+                 if (mustPlay && hand.length > 0) { // Force play smallest single
+                     const smallestCard = hand.pop(); const forcePlayHand = getHandInfo([smallestCard]);
+                     forcePlayHand.player = currentPlayer; lastValidPlayedHand = forcePlayHand; currentTurnPassCount = 0;
+                     
+                     // (记牌器修复：AI被动出牌时减少计数)
+                     updateCardCounter(forcePlayHand.cards); 
+                     
+                     updateHandCounts(); renderPlayedCards(forcePlayHand.cards, currentPlayer);
+                     if (hands[currentPlayer].length === 0) { gameOverWin(currentPlayer); return; }
+                     nextPlayer();
+                 } else if (!mustPlay) passTurn();
+                 else passTurn(); // Avoid freeze
+             }
+         }
+         function renderPlayedCards(cards, playerIndex) {
+            lastPlayedCardsEl.innerHTML = '';
+             if (cards.length > 0) { sortHand(cards); cards.forEach(card => lastPlayedCardsEl.appendChild(renderCard(card, true))); }
+            const playerPlayedEl = playedElements[playerIndex];
+            if (playerPlayedEl) {
+                playerPlayedEl.innerHTML = '';
+                 if (cards.length > 0) cards.forEach(card => playerPlayedEl.appendChild(renderCard(card, true)));
+                 else if (gamePhase === 'playing' && playerIndex !== lastValidPlayedHand.player) playerPlayedEl.innerHTML = '<span class="text-gray-400 text-lg font-bold">不出</span>';
+            }
+         }
+
+        // --- Hand Validation & Comparison ---
+        function getHandInfo(cards) {
+            sortHand(cards); const len = cards.length; if (len === 0) return { type: HandType.INVALID };
+            const ranks = cards.map(c => c.rank); const values = cards.map(c => c.value);
+            const counts = {}; values.forEach(v => counts[v] = (counts[v] || 0) + 1);
+            const distinctValues = Object.keys(counts).map(Number).sort((a,b)=> a-b);
+            const valueSet = new Set(values);
+
+            if (len === 2 && ranks.includes('BJ') && ranks.includes('RJ')) return { type: HandType.ROCKET, value: 100, cards };
+            if (len === 4 && distinctValues.length === 1) return { type: HandType.BOMB, value: values[0], cards };
+
+             // 修复BUG 5: 允许 四带二 (FOUR_TWO_SOLOS) 带一对 (e.g. 8888+66)
+             if (len === 6) {
+                const fourValue = distinctValues.find(v => counts[v] === 4);
+                if (fourValue) {
+                    const kickers = cards.filter(c => c.value !== fourValue);
+                    // 只要带的牌(kickers)的数量是2，就有效 (可以是 6+7, 也可以是 6+6)
+                    if (kickers.length === 2) {
+                        return { type: HandType.FOUR_TWO_SOLOS, value: fourValue, cards };
+                    }
+                }
+             }
+
+             // 四带两对 (FOUR_TWO_PAIRS)
+             if (len === 8 && distinctValues.length === 3) { 
+                const fourValue = distinctValues.find(v => counts[v] === 4); 
+                const pairValues = distinctValues.filter(v => counts[v] === 2); 
+                if (fourValue && pairValues.length === 2) 
+                    return { type: HandType.FOUR_TWO_PAIRS, value: fourValue, cards }; 
+            }
+
+            if (len === 1) return { type: HandType.SINGLE, value: values[0], cards };
+            if (len === 2 && distinctValues.length === 1) return { type: HandType.PAIR, value: values[0], cards };
+            if (len === 3 && distinctValues.length === 1) return { type: HandType.TRIO, value: values[0], cards };
+            if (len === 4 && distinctValues.length === 2) { const trioValue = distinctValues.find(v => counts[v] === 3); if (trioValue) return { type: HandType.TRIO_SOLO, value: trioValue, cards }; }
+            
+            // (三带对)
+            if (len === 5 && distinctValues.length === 2) {
+                const trioValue = distinctValues.find(v => counts[v] === 3);
+                const pairValue = distinctValues.find(v => counts[v] === 2);
+                if (trioValue && pairValue) {
+                    return { type: HandType.TRIO_PAIR, value: trioValue, cards };
+                }
+            }
+
+            if (len >= 5 && distinctValues.length === len) { let isStraight = true; for(let i = 0; i < len - 1; i++) { if (distinctValues[i+1] !== distinctValues[i] + 1 || distinctValues[i+1] >= rankValues['2']) { isStraight = false; break; } } if (isStraight) return { type: HandType.STRAIGHT, value: distinctValues[len - 1], cards }; }
+            if (len >= 6 && len % 2 === 0 && distinctValues.length === len / 2) { let isStraightPair = true; for(let i = 0; i < distinctValues.length - 1; i++) { if (counts[distinctValues[i]] !== 2 || distinctValues[i+1] !== distinctValues[i] + 1 || distinctValues[i+1] >= rankValues['2']) { isStraightPair = false; break; } } if (counts[distinctValues[distinctValues.length-1]] !== 2) isStraightPair = false; if (isStraightPair) return { type: HandType.STRAIGHT_PAIR, value: distinctValues[distinctValues.length - 1], cards }; }
+            
+            // (飞机功能加强)
+            if (len >= 6) {
+                const trioValues = distinctValues.filter(v => counts[v] >= 3).sort((a,b) => a-b); // 允许4带3
+                if (trioValues.length >= 2) {
+                    for (let planeLen = 2; planeLen <= trioValues.length; planeLen++) {
+                        for (let i = 0; i <= trioValues.length - planeLen; i++) { 
+                            let isPlane = true; 
+                            for (let j = 0; j < planeLen - 1; j++) { 
+                                if (trioValues[i+j+1] !== trioValues[i+j] + 1 || trioValues[i+j+1] >= rankValues['2']) { 
+                                    isPlane = false; 
+                                    break; 
+                                } 
+                            }
+                            
+                            if (isPlane) {
+                                const planeMainValues = trioValues.slice(i, i + planeLen); 
+                                const mainValue = planeMainValues[planeLen - 1]; 
+                                const kickerCount = len - planeLen * 3;
+
+                                // 检查：飞机不带翅膀 (e.g. 666777)
+                                if (kickerCount === 0 && len === planeLen * 3) {
+                                    if (distinctValues.length === planeLen && distinctValues.every(v => counts[v] >= 3)) {
+                                        return { type: HandType.PLANE_NO_KICKERS, value: mainValue, length: planeLen, cards };
+                                    }
+                                }
+
+                                // 检查：飞机带单 (PLANE_SOLOS - e.g. 666777+8+9 OR 666777+8+8)
+                                if (kickerCount === planeLen) { 
+                                    const kickers = cards.filter(c => !planeMainValues.includes(c.value)); 
+                                    if (kickers.length === kickerCount) {
+                                        return { type: HandType.PLANE_SOLOS, value: mainValue, length: planeLen, cards }; 
+                                    }
+                                }
+                                // 检查：飞机带对 (PLANE_PAIRS - e.g. 666777+88+99)
+                                else if (kickerCount === planeLen * 2) { 
+                                    const kickers = cards.filter(c => !planeMainValues.includes(c.value)); 
+                                    const kickerCounts = {}; 
+                                    kickers.forEach(k => kickerCounts[k.value] = (kickerCounts[k.value] || 0) + 1); 
+                                    if (kickers.length === kickerCount && Object.values(kickerCounts).every(c => c === 2)) {
+                                        return { type: HandType.PLANE_PAIRS, value: mainValue, length: planeLen, cards }; 
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return { type: HandType.INVALID };
+        }
+
+        function canBeat(currentHand, lastHand) {
+            if (lastHand.player === -1 || lastHand.player === currentPlayer) return currentHand.type !== HandType.INVALID;
+            if (currentHand.type === HandType.INVALID) return false;
+            if (currentHand.type === HandType.ROCKET) return true;
+            if (lastHand.type === HandType.ROCKET) return false;
+            if (currentHand.type === HandType.BOMB && lastHand.type < HandType.BOMB) return true;
+            if (currentHand.type === HandType.BOMB && lastHand.type === HandType.BOMB) return currentHand.value > lastHand.value;
+            if (lastHand.type === HandType.BOMB && currentHand.type < HandType.BOMB) return false;
+
+            // Four+Two 
+            // (四带二 8888+66 和 8888+6+7 都是 FOUR_TWO_SOLOS，所以类型相同，比较主牌 8 即可)
+            if ((currentHand.type === HandType.FOUR_TWO_SOLOS || currentHand.type === HandType.FOUR_TWO_PAIRS) && lastHand.type < HandType.BOMB) return true; 
+            if ((lastHand.type === HandType.FOUR_TWO_SOLOS || lastHand.type === HandType.FOUR_TWO_PAIRS) && currentHand.type < HandType.BOMB) return false;
+            if ((currentHand.type === HandType.FOUR_TWO_SOLOS || currentHand.type === HandType.FOUR_TWO_PAIRS) && currentHand.type === lastHand.type) return currentHand.value > lastHand.value;
+            if ((currentHand.type === HandType.FOUR_TWO_SOLOS || currentHand.type === HandType.FOUR_TWO_PAIRS) && (lastHand.type === HandType.FOUR_TWO_SOLOS || lastHand.type === HandType.FOUR_TWO_PAIRS)) return false; 
+
+            
+            // (飞机功能加强)
+            const planeTypes = [HandType.PLANE_NO_KICKERS, HandType.PLANE_SOLOS, HandType.PLANE_PAIRS];
+            if (planeTypes.includes(currentHand.type) && planeTypes.includes(lastHand.type)) {
+                if (currentHand.type !== lastHand.type) return false;
+                if (currentHand.length !== lastHand.length) return false;
+                return currentHand.value > lastHand.value;
+            }
+            
+            // Normal Hand Comparison
+            if (currentHand.type !== lastHand.type || currentHand.cards.length !== lastHand.cards.length) return false;
+
+            return currentHand.value > lastHand.value;
+        }
+
+        // --- AI Helper Functions ---
+        function findStraights(hand) {
+             const straights = []; const uniqueSortedValues = [...new Set(hand.map(c => c.value))].sort((a, b) => a - b).filter(v => v < rankValues['2']);
+             for (let len = 5; len <= uniqueSortedValues.length; len++) {
+                 for (let i = 0; i <= uniqueSortedValues.length - len; i++) { let isConsecutive = true; for (let j = 0; j < len - 1; j++) { if (uniqueSortedValues[i + j + 1] !== uniqueSortedValues[i + j] + 1) { isConsecutive = false; break; } }
+                     if (isConsecutive) { const straightValues = uniqueSortedValues.slice(i, i + len); const actualStraightCards = []; straightValues.forEach(val => actualStraightCards.push(hand.find(c => c.value === val))); straights.push(getHandInfo(actualStraightCards)); }
+                 }
+             } return straights.filter(s => s.type === HandType.STRAIGHT);
+        }
+        function findStraightPairs(hand) {
+            const pairs = []; const counts = {}; hand.forEach(c => counts[c.value] = (counts[c.value] || 0) + 1);
+            const pairValues = Object.keys(counts).map(Number).filter(v => counts[v] >= 2 && v < rankValues['2']).sort((a,b) => a-b);
+            for(let len = 3; len <= pairValues.length; len++) {
+                for(let i=0; i <= pairValues.length - len; i++){ let isConsecutive = true; for(let j=0; j < len - 1; j++) { if (pairValues[i+j+1] !== pairValues[i+j] + 1) { isConsecutive = false; break; } }
+                    if(isConsecutive) { const pairSeqValues = pairValues.slice(i, i + len); const pairCards = hand.filter(c => pairSeqValues.includes(c.value) && hand.filter(c2 => c2.value === c.value).length >= 2).reduce((acc, card) => { if (acc.filter(c => c.value === card.value).length < 2) acc.push(card); return acc; }, []); if (pairCards.length === len * 2) pairs.push(getHandInfo(pairCards)); }
+                }
+            } return pairs.filter(p => p.type === HandType.STRAIGHT_PAIR);
+        }
+         function findPlanes(hand) {
+             const planes = []; const counts = {}; hand.forEach(c => counts[c.value] = (counts[c.value] || 0) + 1);
+             const trioValues = Object.keys(counts).map(Number).filter(v => counts[v] >= 3 && v < rankValues['2']).sort((a,b) => a-b);
+             
+             // (飞机带单 Kicker 池)
+             const kickerPool = hand.filter(c => (counts[c.value] === 1 || counts[c.value] === 2) && c.value < rankValues['BJ'])
+                                    .sort((a,b) => counts[a.value] - counts[b.value] || a.value - b.value); 
+             
+             // (飞机带对 Kicker 池)
+             const pairsForPlanePairs = hand.filter(c => counts[c.value] === 2).sort((a,b)=>a.value-b.value);
+
+             for(let len = 2; len <= trioValues.length; len++) {
+                 for(let i=0; i <= trioValues.length - len; i++){ let isConsecutive = true; for(let j=0; j < len - 1; j++) { if (trioValues[i+j+1] !== trioValues[i+j] + 1) { isConsecutive = false; break; } }
+                      if(isConsecutive) {
+                          const planeValues = trioValues.slice(i, i + len);
+                          const mainCards = hand.filter(c => planeValues.includes(c.value) && hand.filter(c2=>c2.value===c.value).length >=3).reduce((acc, card) => { if (acc.filter(c => c.value === card.value).length < 3) acc.push(card); return acc; }, []);
+                          
+                          // 飞机不带翅膀
+                          const planeNoKickerInfo = getHandInfo(mainCards);
+                          if (planeNoKickerInfo.type === HandType.PLANE_NO_KICKERS) {
+                              planes.push(planeNoKickerInfo);
+                          }
+
+                          // 飞机带单 (PLANE_SOLOS)
+                          const availableKickers = kickerPool.filter(c => !planeValues.includes(c.value));
+                          if (availableKickers.length >= len) { 
+                              const kickerCards = availableKickers.slice(0, len); 
+                              if (kickerCards.length === len) {
+                                  const planeSoloInfo = getHandInfo([...mainCards, ...kickerCards]); 
+                                  if(planeSoloInfo.type === HandType.PLANE_SOLOS) planes.push(planeSoloInfo);
+                              }
+                          }
+                          
+                          // 飞机带对 (PLANE_PAIRS)
+                          const availablePairs = pairsForPlanePairs.filter(c => !planeValues.includes(c.value));
+                          if (availablePairs.length >= len * 2) { 
+                              const pairGroups = {};
+                              availablePairs.forEach(p => pairGroups[p.value] = (pairGroups[p.value] || []).concat(p));
+                              const distinctPairValues = Object.keys(pairGroups).sort((a,b) => a-b);
+                              
+                              if (distinctPairValues.length >= len) {
+                                const kickerPairs = [];
+                                for(let k=0; k < len; k++) {
+                                    kickerPairs.push(...pairGroups[distinctPairValues[k]].slice(0, 2));
+                                }
+                                const planePairInfo = getHandInfo([...mainCards, ...kickerPairs]); 
+                                if(planePairInfo.type === HandType.PLANE_PAIRS) planes.push(planePairInfo); 
+                              }
+                          }
+                      }
+                 }
+             } return planes;
+         }
+        
+        // 修复BUG 5：更新 AI 寻找四带二的逻辑
+        function findFourTwos(hand) {
+            const fourTwos = []; 
+            const counts = {}; 
+            hand.forEach(c => counts[c.value] = (counts[c.value] || 0) + 1);
+            const fourValues = Object.keys(counts).map(Number).filter(v => counts[v] === 4).sort((a,b) => a-b);
+            
+            // Kicker pools
+            const solos = hand.filter(c => counts[c.value] === 1).sort((a,b)=>a.value-b.value);
+            const pairs = hand.filter(c => counts[c.value] === 2).sort((a,b)=>a.value-b.value);
+            
+            fourValues.forEach(fourVal => {
+                const fourCards = hand.filter(c => c.value === fourVal);
+                
+                // 1. 优先找两个单牌 (e.g. 8888 + 6 + 7)
+                const availableSolos = solos.filter(c => c.value !== fourVal);
+                if (availableSolos.length >= 2) {
+                    const kickers = availableSolos.slice(0, 2);
+                    const fourSoloInfo = getHandInfo([...fourCards, ...kickers]);
+                    if(fourSoloInfo.type === HandType.FOUR_TWO_SOLOS) fourTwos.push(fourSoloInfo);
+                } 
+                // 2. 如果找不到两个单牌，再找一个对子 (e.g. 8888 + 66)
+                else {
+                    const availablePairs = pairs.filter(c => c.value !== fourVal);
+                    if (availablePairs.length >= 2) { // 至少需要一个对子 (2张牌)
+                        const kickers = availablePairs.slice(0, 2); // 取第一个对子
+                        const fourSoloInfo = getHandInfo([...fourCards, ...kickers]);
+                        if(fourSoloInfo.type === HandType.FOUR_TWO_SOLOS) fourTwos.push(fourSoloInfo);
+                    }
+                }
+
+                // 3. 寻找 四带两对 (FOUR_TWO_PAIRS, e.g. 8888 + 66 + 77)
+                const availablePairsForPairs = pairs.filter(c => c.value !== fourVal);
+                if (availablePairsForPairs.length >= 4) { // 至少需要两个对子 (4张牌)
+                    const pairGroups = {}; 
+                    availablePairsForPairs.forEach(p => pairGroups[p.value] = (pairGroups[p.value] || []).concat(p)); 
+                    const distinctPairValues = Object.keys(pairGroups).sort((a,b)=> a-b); 
+                    
+                    if (distinctPairValues.length >= 2) { // 至少需要两个不同值的对子
+                        const kickerPairs = [...pairGroups[distinctPairValues[0]].slice(0, 2), ...pairGroups[distinctPairValues[1]].slice(0, 2)]; 
+                        const fourPairInfo = getHandInfo([...fourCards, ...kickerPairs]); 
+                        if(fourPairInfo.type === HandType.FOUR_TWO_PAIRS) {
+                            fourTwos.push(fourPairInfo); 
+                        }
+                    }
+                }
+            }); 
+            return fourTwos;
+        }
+
+        function findAllPossiblePlays(hand) {
+             const plays = []; const counts = {}; hand.forEach(c => counts[c.value] = (counts[c.value] || 0) + 1);
+             hand.forEach(card => plays.push(getHandInfo([card])));
+             Object.keys(counts).forEach(valStr => { const v = Number(valStr); if (counts[v] >= 2) plays.push(getHandInfo(hand.filter(c => c.value === v).slice(0, 2))); });
+             Object.keys(counts).forEach(valStr => { const v = Number(valStr); if (counts[v] >= 3) { const trio = hand.filter(c => c.value === v).slice(0, 3); plays.push(getHandInfo(trio)); const solos = hand.filter(c => c.value !== v); if (solos.length > 0) plays.push(getHandInfo([...trio, solos[solos.length-1]])); } });
+             
+             // AI寻找三带对
+             Object.keys(counts).forEach(valStr => {
+                const v = Number(valStr);
+                if (counts[v] >= 3) {
+                    const trio = hand.filter(c => c.value === v).slice(0, 3);
+                    const pairs = hand.filter(c => c.value !== v && counts[c.value] >= 2);
+                    const distinctPairValues = [...new Set(pairs.map(p => p.value))];
+                    if (distinctPairValues.length > 0) {
+                        const pair = hand.filter(c => c.value === distinctPairValues[0]).slice(0, 2);
+                        plays.push(getHandInfo([...trio, ...pair]));
+                    }
+                }
+             });
+
+             Object.keys(counts).forEach(valStr => { if (counts[valStr] === 4) plays.push(getHandInfo(hand.filter(c => c.value === Number(valStr)))); });
+             const rocket = hand.filter(c => c.rank === 'BJ' || c.rank === 'RJ'); if (rocket.length === 2) plays.push(getHandInfo(rocket));
+             plays.push(...findStraights(hand)); plays.push(...findStraightPairs(hand)); plays.push(...findPlanes(hand)); plays.push(...findFourTwos(hand));
+             return plays.filter(p => p.type !== HandType.INVALID).sort((a,b) => { if (a.value !== b.value) return a.value - b.value; return a.cards.length - b.cards.length; });
+        }
+
+        // --- Game Over Logic ---
+         function gameOverWin(winnerIndex) {
+             gamePhase = 'gameover'; if(animationFrameId) { cancelAnimationFrame(animationFrameId); animationFrameId = null; }
+             const winnerIsLandlord = winnerIndex === landlord, playerIsWinner = winnerIndex === 0, playerIsLandlord = landlord === 0;
+             let message = playerIsWinner ? "恭喜你，赢得了胜利！" : `机器人 ${winnerIndex === 1 ? 'A' : 'B'} 获胜！`;
+             if (playerIsLandlord) message += winnerIsLandlord ? " (地主胜利)" : " 你输了 (农民胜利)"; else message += !winnerIsLandlord ? " (农民胜利)" : " 你输了 (地主胜利)";
+             endgameTitle.textContent = message;
+             hands.forEach((hand, i) => { endgameHands[i].innerHTML = ''; endgameCounts[i].textContent = hand.length; sortHand(hand); hand.forEach(card => endgameHands[i].appendChild(renderCard(card, true, true))); });
+             endgameModal.classList.remove('hidden'); showActionButtons('none'); btnNewGame.classList.add('hidden');
+         }
+
+        // --- Game Initialization ---
+        function startGame() {
+            if(animationFrameId) { cancelAnimationFrame(animationFrameId); animationFrameId = null; }
+            endgameModal.classList.add('hidden'); createDeck(); shuffleDeck(); dealCards();
+            initializeCardCounter(); // Initialize counter on new game
+            
+            // (记牌器修复：只在游戏开始时减去玩家(你)的手牌)
+            updateCardCounter(hands[0]); 
+            
+            renderPlayerHand(); renderLandlordCards(false); updateHandCounts(); renderCardCounter(); // Render initial counter
+            landlord = -1; currentPlayer = -1; lastValidPlayedHand = { player: -1, cards: [], type: HandType.INVALID, value: 0 };
+            landlordIcons.forEach(icon => icon.classList.add('hidden')); lastPlayedCardsEl.innerHTML = ''; selectedCards = [];
+            playedElements.forEach(el => { if(el) el.innerHTML = ''; });
+            btnNewGame.classList.remove('hidden');
+            const startPlayer = Math.floor(Math.random() * 3); startBidding(startPlayer);
+        }
+
+        btnNewGame.addEventListener('click', startGame); btnNewGameModal.addEventListener('click', startGame);
+        document.getElementById('btn-bid-1').onclick = () => handleBid(1); document.getElementById('btn-bid-2').onclick = () => handleBid(2); document.getElementById('btn-bid-3').onclick = () => handleBid(3); document.getElementById('btn-pass-bid').onclick = () => handleBid(0);
+        btnPlay.onclick = handlePlay; btnPassPlay.onclick = handlePass;
+
+        updateInfoPanel("点击 '新游戏' 开始"); showActionButtons('none');
+    </script>
+
+</body>
+</html>

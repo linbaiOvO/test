@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>奔跑吧！小恐龙 - 软萌修复版</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap');
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #fff0f5; /* 薰衣草红背景 */
+            font-family: 'Fredoka One', cursive, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 800px;
+            height: 400px;
+            background: linear-gradient(to bottom, #e0f7fa 0%, #fff0f5 100%);
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(255, 105, 180, 0.3);
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI 覆盖层 */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(4px);
+            transition: opacity 0.2s;
+            z-index: 10;
+        }
+
+        h1 {
+            font-size: 40px;
+            color: #ff6b81;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 0 #fff;
+        }
+
+        p {
+            color: #70a1ff;
+            font-size: 18px;
+            margin-bottom: 20px;
+            text-align: center;
+            line-height: 1.5;
+        }
+
+        .btn {
+            background: #ff6b81;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 20px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-family: inherit;
+            box-shadow: 0 5px 15px rgba(255, 107, 129, 0.4);
+            transition: transform 0.1s, background 0.2s;
+            outline: none;
+        }
+
+        .btn:hover {
+            background: #ff4757;
+            transform: scale(1.05);
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        #score-board {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            text-align: right;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .score-text {
+            font-size: 24px;
+            color: #535c68;
+            text-shadow: 1px 1px 0 #fff;
+        }
+
+        .high-score {
+            font-size: 16px;
+            color: #95afc0;
+        }
+
+        /* 暂停图标 */
+        #pause-icon {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 24px;
+            color: #ff6b81;
+            cursor: pointer;
+            z-index: 5;
+            background: rgba(255,255,255,0.5);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        @media (max-width: 600px) {
+            #game-container {
+                width: 100%;
+                height: 100%;
+                border-radius: 0;
+            }
+            h1 { font-size: 30px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div id="pause-icon" onclick="togglePause()">⏸</div>
+
+        <div id="score-board">
+            <div class="score-text">HI: <span id="highScoreVal">0</span></div>
+            <div class="score-text" style="color: #ff6b81"><span id="currentScoreVal">0</span></div>
+        </div>
+
+        <div id="ui-layer">
+            <h1 id="ui-title">🦖 奔跑吧！小恐龙</h1>
+            <p id="ui-desc">按 [空格] 或 [点击屏幕] 跳跃<br>按 [ESC] 暂停游戏</p>
+            <button id="ui-btn" class="btn" onclick="startGame()">开始摸鱼</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const uiLayer = document.getElementById('ui-layer');
+        const uiTitle = document.getElementById('ui-title');
+        const uiDesc = document.getElementById('ui-desc');
+        const uiBtn = document.getElementById('ui-btn');
+        const scoreEl = document.getElementById('currentScoreVal');
+        const highScoreEl = document.getElementById('highScoreVal');
+
+        // --- 游戏常量 (物理参数微调) ---
+        const GAME_SPEED_START = 6; 
+        const GAME_SPEED_MAX = 18;
+        const GRAVITY = 0.8;     // 重力适中
+        const JUMP_FORCE = -13;  // 跳跃初始爆发力
+        
+        // --- 游戏状态 ---
+        let gameSpeed = GAME_SPEED_START;
+        let score = 0;
+        let highScore = localStorage.getItem('dinoHighScore') || 0;
+        let isGameOver = false;
+        let isPlaying = false;
+        let isPaused = false;
+        let frame = 0;
+        let animationId = null;
+
+        // 实体
+        let obstacles = [];
+        let clouds = [];
+        let particles = [];
+
+        function resize() {
+            canvas.width = canvas.parentElement.offsetWidth;
+            canvas.height = canvas.parentElement.offsetHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        highScoreEl.innerText = Math.floor(highScore);
+
+        // --- 输入控制 ---
+        let keys = {};
+        let jumpPressed = false; // 记录跳跃键是否被按下（用于长按判断）
+
+        document.addEventListener('keydown', function (evt) {
+            keys[evt.code] = true;
+            
+            // 空格/上箭头：跳跃或开始
+            if (evt.code === 'Space' || evt.code === 'ArrowUp') {
+                evt.preventDefault(); // 防止滚动
+                jumpPressed = true;
+                if (!isPlaying && !isGameOver) startGame();
+                else if (isGameOver) startGame();
+            }
+            
+            // 下箭头：下蹲
+            if (evt.code === 'ArrowDown') {
+                evt.preventDefault();
+            }
+
+            // ESC：暂停
+            if (evt.code === 'Escape') {
+                togglePause();
+            }
+        });
+
+        document.addEventListener('keyup', function (evt) {
+            keys[evt.code] = false;
+            if (evt.code === 'Space' || evt.code === 'ArrowUp') {
+                jumpPressed = false;
+            }
+        });
+
+        // 触摸支持
+        canvas.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            jumpPressed = true;
+            keys['Space'] = true; // 模拟按键
+            if (!isPlaying && !isGameOver) startGame();
+            else if (isGameOver) startGame();
+        }, {passive: false});
+
+        canvas.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            jumpPressed = false;
+            keys['Space'] = false;
+        });
+
+        // --- 暂停功能 ---
+        window.togglePause = function() {
+            if (!isPlaying || isGameOver) return;
+
+            isPaused = !isPaused;
+            
+            if (isPaused) {
+                // 暂停状态
+                cancelAnimationFrame(animationId);
+                uiLayer.style.opacity = 1;
+                uiLayer.style.pointerEvents = 'auto';
+                uiTitle.innerText = "休息一下 ☕";
+                uiDesc.innerHTML = `当前得分: ${Math.floor(score)}<br>点击按钮继续`;
+                uiBtn.innerText = "继续奔跑";
+                uiBtn.onclick = togglePause; // 按钮功能改为取消暂停
+            } else {
+                // 恢复游戏
+                uiLayer.style.opacity = 0;
+                uiLayer.style.pointerEvents = 'none';
+                uiBtn.onclick = startGame; // 恢复按钮原本功能（以防万一）
+                animateLoop();
+            }
+        }
+
+        // --- 角色类 ---
+        class Dino {
+            constructor() {
+                this.w = 44;
+                this.h = 48;
+                this.x = 50;
+                this.groundY = canvas.height - 150;
+                this.y = this.groundY - this.h;
+                
+                this.dy = 0;
+                this.originalH = 48;
+                this.isDucking = false;
+                this.grounded = true;
+                this.color = '#ff6b81';
+            }
+
+            animate() {
+                // 1. 下蹲逻辑
+                if (keys['ArrowDown'] || keys['KeyS']) {
+                    this.h = this.originalH / 1.8;
+                    this.isDucking = true;
+                    // 如果在地面且下蹲，增加下坠速度（快速落地）
+                    if (!this.grounded) this.dy += 2; 
+                } else {
+                    this.h = this.originalH;
+                    this.isDucking = false;
+                }
+
+                // 2. 跳跃逻辑 (核心修复)
+                if (jumpPressed && this.grounded) {
+                    this.dy = JUMP_FORCE;
+                    this.grounded = false;
+                    // 特效
+                    spawnParticles(this.x + this.w/2, this.y + this.h, 5);
+                }
+
+                // 小跳/大跳逻辑：如果中途松开跳跃键，且正在上升，则削减上升速度
+                if (!jumpPressed && this.dy < 0) {
+                    this.dy += 1.5; // 快速截断跳跃高度
+                }
+
+                // 3. 物理更新
+                this.y += this.dy;
+
+                // 4. 地面碰撞
+                if (this.y + this.h < this.groundY) {
+                    this.dy += GRAVITY;
+                    this.grounded = false;
+                } else {
+                    this.dy = 0;
+                    this.grounded = true;
+                    this.y = this.groundY - this.h;
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                
+                // 根据下蹲调整绘制位置
+                let drawY = this.y;
+                if (this.isDucking) drawY = this.y + (this.originalH - this.h);
+
+                // 身体
+                roundRect(ctx, this.x, drawY, this.w, this.h, 10);
+
+                // 眼睛
+                if (!this.isDucking) {
+                    ctx.fillStyle = 'white';
+                    ctx.beginPath();
+                    ctx.arc(this.x + this.w - 12, drawY + 12, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = 'black';
+                    ctx.beginPath();
+                    ctx.arc(this.x + this.w - 10, drawY + 12, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // 腮红
+                    ctx.fillStyle = '#ff9ff3';
+                    ctx.globalAlpha = 0.6;
+                    ctx.beginPath();
+                    ctx.arc(this.x + this.w - 18, drawY + 22, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1.0;
+                } else {
+                    // 下蹲时的眯眯眼
+                    ctx.fillStyle = 'white';
+                    ctx.beginPath();
+                    ctx.arc(this.x + this.w - 12, drawY + 12, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = 'black';
+                    ctx.fillRect(this.x + this.w - 16, drawY + 11, 8, 2);
+                }
+
+                // 腿部动画
+                if (this.grounded && gameSpeed > 0) {
+                    ctx.fillStyle = '#e55066';
+                    if (Math.floor(frame / 5) % 2 === 0) {
+                        roundRect(ctx, this.x + 5, drawY + this.h - 4, 10, 8, 2);
+                        roundRect(ctx, this.x + 25, drawY + this.h - 4, 10, 4, 2);
+                    } else {
+                        roundRect(ctx, this.x + 5, drawY + this.h - 4, 10, 4, 2);
+                        roundRect(ctx, this.x + 25, drawY + this.h - 4, 10, 8, 2);
+                    }
+                }
+            }
+        }
+
+        // --- 障碍物类 ---
+        class Obstacle {
+            constructor(gameSpeed) {
+                this.x = canvas.width;
+                this.groundY = canvas.height - 150;
+                this.y = this.groundY;
+                
+                const typeVal = Math.random();
+                this.type = 'cactus';
+
+                if (score > 300 && typeVal > 0.7) {
+                    // 翼龙
+                    this.type = 'bird';
+                    this.w = 42;
+                    this.h = 30;
+                    // 高度随机：低(需跳) / 高(需蹲)
+                    const hRand = Math.random();
+                    if (hRand > 0.6) this.y -= 55; // 高飞（蹲）
+                    else if (hRand > 0.3) this.y -= 20; // 低飞（跳）
+                    else this.y -= 90; // 飞得很高（装饰）
+                } else {
+                    // 仙人掌
+                    if (Math.random() > 0.5) {
+                        this.w = 40; this.h = 50; // 大
+                    } else {
+                        this.w = 25; this.h = 35; // 小
+                    }
+                    this.y -= this.h;
+                }
+                
+                this.markedForDeletion = false;
+            }
+
+            update() {
+                this.x -= gameSpeed;
+                if (this.x + this.w < -50) this.markedForDeletion = true;
+            }
+
+            draw() {
+                if (this.type === 'cactus') {
+                    ctx.fillStyle = '#2ed573';
+                    roundRect(ctx, this.x, this.y, this.w, this.h, this.w/2);
+                    ctx.fillStyle = '#7bed9f';
+                    ctx.beginPath(); ctx.arc(this.x + 5, this.y + 10, 2, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(this.x + this.w - 5, this.y + 20, 2, 0, Math.PI*2); ctx.fill();
+                } else {
+                    // 翼龙
+                    ctx.fillStyle = '#70a1ff';
+                    roundRect(ctx, this.x, this.y, this.w, this.h, 5);
+                    // 翅膀
+                    ctx.fillStyle = '#a4c6ff';
+                    const wingY = (Math.floor(frame / 10) % 2 === 0) ? -15 : 10;
+                    ctx.beginPath();
+                    ctx.moveTo(this.x + 10, this.y + 10);
+                    ctx.lineTo(this.x + 20, this.y + 10 + wingY);
+                    ctx.lineTo(this.x + 30, this.y + 10);
+                    ctx.fill();
+                    // 眼
+                    ctx.fillStyle = 'white';
+                    ctx.beginPath(); ctx.arc(this.x + 8, this.y + 8, 4, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = 'black';
+                    ctx.beginPath(); ctx.arc(this.x + 8, this.y + 8, 1.5, 0, Math.PI*2); ctx.fill();
+                }
+            }
+        }
+
+        class Cloud {
+            constructor() {
+                this.x = canvas.width;
+                this.y = Math.random() * 100 + 30;
+                this.speed = Math.random() * 0.5 + 0.5;
+                this.w = 60;
+            }
+            update() { this.x -= this.speed; }
+            draw() {
+                ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 20, 0, Math.PI*2);
+                ctx.arc(this.x + 25, this.y - 10, 25, 0, Math.PI*2);
+                ctx.arc(this.x + 50, this.y, 20, 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+
+        class Particle {
+            constructor(x, y) {
+                this.x = x; this.y = y;
+                this.size = Math.random() * 5 + 2;
+                this.speedX = Math.random() * 2 - 1;
+                this.speedY = Math.random() * -2 - 1;
+                this.color = `rgba(255, 255, 255, ${Math.random()})`;
+            }
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                this.size *= 0.92;
+            }
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI*2); ctx.fill();
+            }
+        }
+
+        // --- 主逻辑 ---
+        function roundRect(ctx, x, y, width, height, r) {
+            if (width < 2 * r) r = width / 2;
+            if (height < 2 * r) r = height / 2;
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + width, y, x + width, y + height, r);
+            ctx.arcTo(x + width, y + height, x, y + height, r);
+            ctx.arcTo(x, y + height, x, y, r);
+            ctx.arcTo(x, y, x + width, y, r);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function spawnParticles(x, y, count) {
+            for (let i = 0; i < count; i++) particles.push(new Particle(x, y));
+        }
+
+        let dino = new Dino();
+
+        function startGame() {
+            dino = new Dino();
+            gameSpeed = GAME_SPEED_START;
+            score = 0;
+            isGameOver = false;
+            isPaused = false;
+            isPlaying = true;
+            obstacles = [];
+            clouds = [];
+            particles = [];
+            frame = 0;
+            
+            uiLayer.style.opacity = 0;
+            uiLayer.style.pointerEvents = 'none';
+            uiBtn.onclick = startGame;
+            
+            animateLoop();
+        }
+
+        function animateLoop() {
+            if (!isPlaying) return;
+
+            animationId = requestAnimationFrame(animateLoop);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            frame++;
+            gameSpeed += 0.0015;
+            if(gameSpeed > GAME_SPEED_MAX) gameSpeed = GAME_SPEED_MAX;
+            score += 0.1;
+            scoreEl.innerText = Math.floor(score);
+
+            // 背景
+            if (frame % 150 === 0 && Math.random() > 0.5) clouds.push(new Cloud());
+            clouds.forEach((c, i) => {
+                c.update(); c.draw();
+                if(c.x < -100) clouds.splice(i, 1);
+            });
+
+            // 地面线
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height - 150 + 48);
+            ctx.lineTo(canvas.width, canvas.height - 150 + 48);
+            ctx.strokeStyle = "#dcdde1";
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // 恐龙
+            dino.animate();
+            dino.draw();
+
+            // 障碍物
+            if (frame % 60 === 0) {
+                let lastX = obstacles.length > 0 ? obstacles[obstacles.length-1].x : 0;
+                if (canvas.width - lastX > 300 + Math.random() * 200) {
+                    obstacles.push(new Obstacle(gameSpeed));
+                }
+            }
+
+            obstacles.forEach((obs, index) => {
+                obs.update();
+                obs.draw();
+
+                // 碰撞盒微调 (Hitbox)
+                let paddingX = 10;
+                let paddingY = 8;
+                let dinoHitH = dino.isDucking ? dino.h : dino.h - 10; // 站立时头部判定稍微宽松点
+
+                if (
+                    dino.x < obs.x + obs.w - paddingX &&
+                    dino.x + dino.w - paddingX > obs.x &&
+                    dino.y + (dino.isDucking ? 0 : 10) < obs.y + obs.h - paddingY &&
+                    dino.y + dinoHitH - paddingY > obs.y
+                ) {
+                    handleGameOver();
+                }
+
+                if (obs.markedForDeletion) obstacles.splice(index, 1);
+            });
+
+            // 粒子
+            particles.forEach((p, i) => {
+                p.update(); p.draw();
+                if(p.size <= 0.2) particles.splice(i, 1);
+            });
+        }
+
+        function handleGameOver() {
+            isPlaying = false;
+            isGameOver = true;
+            cancelAnimationFrame(animationId);
+
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('dinoHighScore', highScore);
+                highScoreEl.innerText = Math.floor(highScore);
+            }
+
+            // 绘制受伤状态
+            dino.color = '#a4b0be';
+            dino.draw();
+
+            uiTitle.innerText = "哎呀！撞到了 QAQ";
+            uiDesc.innerHTML = `本次得分: ${Math.floor(score)}<br>点击按钮再次奔跑`;
+            uiBtn.innerText = "再试一次";
+            uiLayer.style.opacity = 1;
+            uiLayer.style.pointerEvents = 'auto';
+        }
+
+        // 初始渲染
+        dino.draw();
+    </script>
+</body>
+</html>

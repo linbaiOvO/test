@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>扫雷 - 公平竞技版</title>
+    <style>
+        /* --- 经典 Windows 98 风格 --- */
+        :root {
+            --bg-color: #c0c0c0;
+            --shadow-light: #ffffff;
+            --shadow-med: #808080;
+            --shadow-dark: #000000;
+            --cell-size: 16px;
+        }
+
+        body {
+            background-color: #008080;
+            font-family: "Tahoma", "Segoe UI", sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* 边框样式 */
+        #window {
+            background-color: var(--bg-color);
+            padding: 6px;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+            border-top: 2px solid var(--shadow-light);
+            border-left: 2px solid var(--shadow-light);
+            border-right: 2px solid var(--shadow-dark);
+            border-bottom: 2px solid var(--shadow-dark);
+            display: inline-block;
+        }
+
+        /* 菜单栏 */
+        #menu-bar {
+            display: flex;
+            gap: 10px;
+            padding-bottom: 5px;
+            font-size: 11px;
+        }
+        .menu-item { cursor: pointer; padding: 0 4px; }
+        .menu-item:hover { background: #000080; color: white; }
+        
+        /* 头部信息区 */
+        #header {
+            border-top: 2px solid var(--shadow-med);
+            border-left: 2px solid var(--shadow-med);
+            border-right: 2px solid var(--shadow-light);
+            border-bottom: 2px solid var(--shadow-light);
+            padding: 4px 7px;
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* 数字显示屏 */
+        .digital-display {
+            background-color: #000;
+            color: #ff0000;
+            font-family: "Courier New", monospace;
+            font-size: 22px;
+            font-weight: bold;
+            line-height: 22px;
+            height: 24px;
+            width: 39px;
+            text-align: right;
+            padding: 1px;
+            border-top: 1px solid var(--shadow-med);
+            border-left: 1px solid var(--shadow-med);
+            border-right: 1px solid var(--shadow-light);
+            border-bottom: 1px solid var(--shadow-light);
+            overflow: hidden;
+            letter-spacing: 1px;
+        }
+
+        /* 表情按钮 */
+        #face-btn {
+            width: 26px; height: 26px;
+            border-top: 2px solid var(--shadow-light);
+            border-left: 2px solid var(--shadow-light);
+            border-right: 2px solid var(--shadow-med);
+            border-bottom: 2px solid var(--shadow-med);
+            display: flex; justify-content: center; align-items: center;
+            cursor: pointer;
+        }
+        #face-btn:active {
+            border-top: 2px solid var(--shadow-med);
+            border-left: 2px solid var(--shadow-med);
+            border-right: 2px solid var(--shadow-light);
+            border-bottom: 2px solid var(--shadow-light);
+        }
+        #face-btn:active svg { transform: translate(1px, 1px); }
+
+        /* 雷区网格 */
+        #grid-border {
+            border-top: 3px solid var(--shadow-med);
+            border-left: 3px solid var(--shadow-med);
+            border-right: 3px solid var(--shadow-light);
+            border-bottom: 3px solid var(--shadow-light);
+        }
+        
+        #grid {
+            display: grid;
+            background-color: var(--shadow-med);
+        }
+
+        /* 格子 */
+        .cell {
+            width: var(--cell-size); height: var(--cell-size);
+            background-color: var(--bg-color);
+            font-size: 12px; font-weight: 900;
+            text-align: center; line-height: var(--cell-size);
+            /* 默认凸起 */
+            border-top: 2px solid var(--shadow-light);
+            border-left: 2px solid var(--shadow-light);
+            border-right: 2px solid var(--shadow-med);
+            border-bottom: 2px solid var(--shadow-med);
+            box-sizing: border-box;
+        }
+
+        /* 凹陷状态 (点开或被按下) */
+        .cell.revealed, .cell.pressed {
+            border: 1px solid #808080; /* 极细微的边框 */
+            border: none; 
+            border-top: 1px solid #808080;
+            border-left: 1px solid #808080;
+            padding: 0;
+        }
+
+        /* 颜色 */
+        .c1 { color: blue; } .c2 { color: green; } .c3 { color: red; } .c4 { color: darkblue; }
+        .c5 { color: darkred; } .c6 { color: teal; } .c7 { color: black; } .c8 { color: gray; }
+
+        .bomb { background-color: #ff0000 !important; }
+        .cell img, .cell svg {
+            width: 12px; height: 12px;
+            display: block; margin: 0 auto;
+            position: relative; top: 50%; transform: translateY(-50%);
+        }
+
+        /* 控制面板 */
+        #controls {
+            margin-bottom: 10px; background: #c0c0c0;
+            padding: 5px; border: 2px solid white;
+            border-right-color: gray; border-bottom-color: gray;
+            display: flex; gap: 10px;
+        }
+        select, button { font-family: "Tahoma", sans-serif; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <label>难度: 
+            <select id="difficulty-select">
+                <option value="beginner">初级 (9x9, 10雷)</option>
+                <option value="intermediate">中级 (16x16, 40雷)</option>
+                <option value="expert">高级 (30x16, 99雷)</option>
+            </select>
+        </label>
+        <button onclick="resetGame()">新游戏</button>
+    </div>
+
+    <div id="window">
+        <div id="menu-bar">
+            <div class="menu-item" onclick="resetGame()">Game</div>
+            <div class="menu-item" onclick="alert('公平竞技版：\n1. 遇到必须二选一的死局时，任意选择都会被判定为正确（系统自动移雷）。\n2. 按住数字键时，如果周围地雷未标满，周围格子会抖动提示。')">Help</div>
+        </div>
+
+        <div id="header">
+            <div id="mines-count" class="digital-display">010</div>
+            <div id="face-btn" onmousedown="setFace('ooh')" onmouseup="if(!gameOver) setFace('smile')" onclick="resetGame()">
+                <svg id="face-svg" width="18" height="18" viewBox="0 0 24 24"></svg>
+            </div>
+            <div id="timer" class="digital-display">000</div>
+        </div>
+
+        <div id="grid-border">
+            <div id="grid"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- SVG 资源 ---
+        const SVG_MINE = `<svg width="14" height="14" viewBox="0 0 20 20"><circle cx="10" cy="10" r="6" fill="black"/><line x1="10" y1="2" x2="10" y2="18" stroke="black" stroke-width="2"/><line x1="2" y1="10" x2="18" y2="10" stroke="black" stroke-width="2"/><line x1="4.3" y1="4.3" x2="15.7" y2="15.7" stroke="black" stroke-width="2"/><line x1="4.3" y1="15.7" x2="15.7" y2="4.3" stroke="black" stroke-width="2"/><rect x="7" y="7" width="3" height="3" fill="white"/></svg>`;
+        const SVG_FLAG = `<svg width="14" height="14" viewBox="0 0 20 20"><line x1="10" y1="2" x2="10" y2="18" stroke="black" stroke-width="2"/><path d="M 10 2 L 2 6 L 10 10 Z" fill="red"/><rect x="6" y="16" width="8" height="2" fill="black"/></svg>`;
+        const SVG_WRONG = `<svg width="14" height="14" viewBox="0 0 20 20"><line x1="10" y1="2" x2="10" y2="18" stroke="black" stroke-width="2"/><line x1="2" y1="10" x2="18" y2="10" stroke="black" stroke-width="2"/><circle cx="10" cy="10" r="6" fill="black"/><line x1="2" y1="2" x2="18" y2="18" stroke="red" stroke-width="2"/><line x1="18" y1="2" x2="2" y2="18" stroke="red" stroke-width="2"/></svg>`;
+
+        // --- 游戏配置 ---
+        const SETTINGS = {
+            beginner: { w: 9, h: 9, m: 10 },
+            intermediate: { w: 16, h: 16, m: 40 },
+            expert: { w: 30, h: 16, m: 99 }
+        };
+
+        // --- 状态变量 ---
+        let width, height, mineCount;
+        let grid = [];
+        let revealedCount = 0;
+        let flags = 0;
+        let gameOver = false;
+        let timer = 0;
+        let timerInterval = null;
+        let firstClick = true;
+        // 记录当前被“按下”的邻居格子（用于抖动效果）
+        let pressedNeighbors = []; 
+
+        const elGrid = document.getElementById('grid');
+        const elMines = document.getElementById('mines-count');
+        const elTimer = document.getElementById('timer');
+        const elFace = document.getElementById('face-svg');
+        const diffSelect = document.getElementById('difficulty-select');
+
+        diffSelect.addEventListener('change', resetGame);
+        document.addEventListener('mouseup', handleGlobalMouseUp);
+
+        // 初始化
+        resetGame();
+
+        function resetGame() {
+            const diff = SETTINGS[diffSelect.value];
+            width = diff.w; height = diff.h; mineCount = diff.m;
+
+            grid = []; revealedCount = 0; flags = 0;
+            gameOver = false; firstClick = true;
+            timer = 0; stopTimer();
+            pressedNeighbors = [];
+
+            elTimer.textContent = '000';
+            updateMineCount();
+            setFace('smile');
+
+            elGrid.innerHTML = '';
+            elGrid.style.gridTemplateColumns = `repeat(${width}, 16px)`;
+            elGrid.style.gridTemplateRows = `repeat(${height}, 16px)`;
+
+            for (let y = 0; y < height; y++) {
+                let row = [];
+                for (let x = 0; x < width; x++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.dataset.x = x; cell.dataset.y = y;
+                    
+                    cell.addEventListener('mousedown', handleCellMouseDown);
+                    // 禁用默认右键
+                    cell.addEventListener('contextmenu', e => e.preventDefault());
+                    
+                    elGrid.appendChild(cell);
+                    row.push({
+                        x, y,
+                        isMine: false,
+                        isRevealed: false,
+                        isFlagged: false,
+                        element: cell
+                    });
+                }
+                grid.push(row);
+            }
+        }
+
+        // --- 时间与显示 ---
+        function startTimer() {
+            if (timerInterval) return;
+            timerInterval = setInterval(() => {
+                if (timer < 999) timer++;
+                elTimer.textContent = timer.toString().padStart(3, '0');
+            }, 1000);
+        }
+        function stopTimer() { clearInterval(timerInterval); timerInterval = null; }
+        
+        function updateMineCount() {
+            let c = mineCount - flags;
+            if(c < -99) c = -99; if(c > 999) c = 999;
+            let t = c.toString();
+            if(c >= 0) t = t.padStart(3, '0');
+            elMines.textContent = t;
+        }
+
+        function setFace(state) {
+            elFace.innerHTML = '';
+            const base = `<circle cx="12" cy="12" r="10" fill="yellow" stroke="black" stroke-width="1"/>`;
+            if (state === 'smile') {
+                elFace.innerHTML = base + `<circle cx="8" cy="9" r="1.5" fill="black"/><circle cx="16" cy="9" r="1.5" fill="black"/><path d="M 7 14 Q 12 19 17 14" stroke="black" stroke-width="1" fill="none"/>`;
+            } else if (state === 'ooh') {
+                elFace.innerHTML = base + `<circle cx="8" cy="9" r="1.5" fill="black"/><circle cx="16" cy="9" r="1.5" fill="black"/><circle cx="12" cy="16" r="2.5" stroke="black" stroke-width="1" fill="none"/>`;
+            } else if (state === 'dead') {
+                elFace.innerHTML = base + `<line x1="6" y1="7" x2="10" y2="11" stroke="black" stroke-width="1.5"/><line x1="10" y1="7" x2="6" y2="11" stroke="black" stroke-width="1.5"/><line x1="14" y1="7" x2="18" y2="11" stroke="black" stroke-width="1.5"/><line x1="18" y1="7" x2="14" y2="11" stroke="black" stroke-width="1.5"/><path d="M 8 16 Q 12 13 16 16" stroke="black" stroke-width="1" fill="none"/>`;
+            } else if (state === 'cool') {
+                elFace.innerHTML = base + `<path d="M 5 8 L 19 8 L 17 11 L 12 11 L 7 11 Z" fill="black"/><path d="M 7 14 Q 12 19 17 14" stroke="black" stroke-width="1" fill="none"/>`;
+            }
+        }
+
+        // --- 鼠标交互逻辑 ---
+
+        function handleCellMouseDown(e) {
+            if (gameOver) return;
+            const x = parseInt(e.target.dataset.x);
+            const y = parseInt(e.target.dataset.y);
+            const cell = grid[y][x];
+
+            // 左键或中键按下时，表情惊讶
+            if (e.button === 0 || e.button === 1) setFace('ooh');
+
+            // 【功能2：周围格子抖动/凹陷】
+            // 触发条件：点击了已揭示的数字，或者左右键同时按(Chord)
+            // 既然要模拟 Windows，左右键同时按比较难捕捉，我们用“点击已揭示格子”来触发
+            // 另外，Windows 中，即使不满足开格条件，按下也会让周围格子凹陷
+            if (cell.isRevealed) {
+                if (e.button === 0 || e.button === 1 || e.buttons === 3) { // 左键、中键或双键
+                    const count = countMines(x, y); // 格子本身的数字
+                    // 获取周围未开启且未插旗的格子
+                    const neighbors = getNeighbors(x, y);
+                    const flagCount = neighbors.filter(n => n.isFlagged).length;
+
+                    // 只有当周围标记的雷 < 数字时，才做“抖动”提示（或者仅仅是按下效果）
+                    // 经典扫雷逻辑：只要按下就凹陷，不管旗子够不够。
+                    // 题目要求：标了数字但周围地雷比数字小（旗子不够）时，提醒玩家。
+                    if (flagCount < count) {
+                        highlightNeighbors(x, y);
+                    }
+                }
+            }
+        }
+
+        function handleGlobalMouseUp(e) {
+            // 清除所有抖动高亮
+            clearHighlights();
+            
+            if (gameOver) return;
+            setFace('smile'); // 恢复笑脸
+
+            // 找到鼠标释放时的目标格子（如果有）
+            const target = e.target.closest('.cell');
+            if (!target) return;
+
+            const x = parseInt(target.dataset.x);
+            const y = parseInt(target.dataset.y);
+            const cell = grid[y][x];
+
+            // 右键：插旗 (mouseup触发比较稳)
+            if (e.button === 2) {
+                if (!cell.isRevealed) {
+                    cell.isFlagged = !cell.isFlagged;
+                    cell.element.innerHTML = cell.isFlagged ? SVG_FLAG : '';
+                    flags += cell.isFlagged ? 1 : -1;
+                    updateMineCount();
+                }
+                return;
+            }
+
+            // 左键：揭示
+            if (e.button === 0) {
+                if (cell.isFlagged) return;
+                if (firstClick) {
+                    firstClick = false;
+                    placeMines(x, y); // 首次生成
+                    startTimer();
+                }
+
+                if (cell.isRevealed) {
+                    // Chord 操作 (点击数字开周围)
+                    tryChord(x, y);
+                } else {
+                    // 普通开启，带防脸黑检测
+                    revealWithSafety(x, y);
+                }
+            }
+            
+            // 中键
+            if (e.button === 1) {
+                if (cell.isRevealed) tryChord(x, y);
+            }
+
+            checkWin();
+        }
+
+        // --- 核心游戏逻辑 ---
+
+        function getNeighbors(x, y) {
+            const arr = [];
+            for(let dy=-1; dy<=1; dy++){
+                for(let dx=-1; dx<=1; dx++){
+                    if(dx===0 && dy===0) continue;
+                    const nx=x+dx, ny=y+dy;
+                    if(nx>=0 && nx<width && ny>=0 && ny<height) arr.push(grid[ny][nx]);
+                }
+            }
+            return arr;
+        }
+
+        function countMines(x, y) {
+            return getNeighbors(x, y).filter(c => c.isMine).length;
+        }
+
+        function placeMines(exX, exY) {
+            let placed = 0;
+            while(placed < mineCount) {
+                const rx = Math.floor(Math.random()*width);
+                const ry = Math.floor(Math.random()*height);
+                // 保证第一下点击周围一圈无雷
+                if(Math.abs(rx-exX)<=1 && Math.abs(ry-exY)<=1) continue;
+                if(!grid[ry][rx].isMine) {
+                    grid[ry][rx].isMine = true;
+                    placed++;
+                }
+            }
+        }
+
+        // --- 功能2：高亮/抖动周围格子 ---
+        function highlightNeighbors(x, y) {
+            const ns = getNeighbors(x, y);
+            ns.forEach(n => {
+                if (!n.isRevealed && !n.isFlagged) {
+                    n.element.classList.add('pressed');
+                    pressedNeighbors.push(n);
+                }
+            });
+        }
+
+        function clearHighlights() {
+            pressedNeighbors.forEach(n => n.element.classList.remove('pressed'));
+            pressedNeighbors = [];
+        }
+
+        // --- 功能1：公平猜测 (安全揭示) ---
+        function revealWithSafety(x, y) {
+            const cell = grid[y][x];
+            
+            // 如果点到雷了
+            if (cell.isMine) {
+                // 检查是否是“不可避免的猜测”
+                // 这里的逻辑是：运行一个简易求解器。
+                // 如果求解器无法判断该格子状态(UNKNOWN)，则视为必须猜测，我们移走雷。
+                // 如果求解器能判断该格子是雷，或者根本无法移走雷，则判定死亡。
+                
+                const status = runLogicSolver();
+                const cellState = status[`${x},${y}`]; // SAFE, MINE, or undefined(UNKNOWN)
+
+                if (cellState === 'MINE') {
+                    // 逻辑已判死刑，玩家算错了 -> 炸
+                    explode(cell);
+                } else {
+                    // 逻辑无法判断(UNKNOWN) -> 运气局，执行移雷救赎
+                    // 尝试把雷移到别处
+                    if (tryMoveMine(x, y)) {
+                        // 移雷成功，现在它是安全的了，递归揭示
+                        reveal(x, y);
+                    } else {
+                        // 没地方移了（极罕见）-> 炸
+                        explode(cell);
+                    }
+                }
+            } else {
+                reveal(x, y);
+            }
+        }
+
+        // 尝试将雷从(x,y)移走，并保证不破坏当前局面数字
+        function tryMoveMine(srcX, srcY) {
+            // 寻找一个非雷、未揭示的空位
+            // 为了性能，简单的随机尝试即可，或者遍历
+            // 必须满足：移雷后，所有已揭示格子的数字不变
+            
+            // 1. 先临时移除雷
+            grid[srcY][srcX].isMine = false;
+
+            // 获取所有受影响的已揭示邻居（我们需要保证它们的数字不变）
+            // 如果把雷移走，这些邻居的雷数会-1。所以我们需要移入一个新的雷，
+            // 新雷必须不在这些邻居的范围内？不对。
+            // 这是一个复杂的约束满足问题。
+            
+            // 简化策略：
+            // 我们只需要找到一个坑 (tx, ty)，使得：
+            // 1. (tx, ty) 不是雷，未揭示。
+            // 2. 把雷放到 (tx, ty) 后，所有已揭示格子的数字依然正确。
+            //    这等价于：对于所有已揭示的格子 C，如果 C 是 (tx,ty) 的邻居，则 C 也必须是 (srcX, srcY) 的邻居。
+            //    否则 C 的数字会变大。
+            //    同理，如果 C 是 (srcX, srcY) 的邻居，C 也必须是 (tx, ty) 的邻居。
+            //    即：(srcX, srcY) 和 (tx, ty) 必须拥有完全相同的“已揭示邻居集合”。
+            
+            // 让我们遍历所有候选点
+            const revealedNeighborsOfSrc = getNeighbors(srcX, srcY).filter(n => n.isRevealed);
+
+            for (let ty = 0; ty < height; ty++) {
+                for (let tx = 0; tx < width; tx++) {
+                    const target = grid[ty][tx];
+                    if (target.isMine || target.isRevealed || (tx === srcX && ty === srcY)) continue;
+                    
+                    // 检查条件：Target的已揭示邻居集合 === Source的已揭示邻居集合
+                    const revealedNeighborsOfTarget = getNeighbors(tx, ty).filter(n => n.isRevealed);
+                    
+                    if (revealedNeighborsOfSrc.length !== revealedNeighborsOfTarget.length) continue;
+                    
+                    // 比较集合内容
+                    const setSrc = new Set(revealedNeighborsOfSrc.map(n => `${n.x},${n.y}`));
+                    const allMatch = revealedNeighborsOfTarget.every(n => setSrc.has(`${n.x},${n.y}`));
+                    
+                    if (allMatch) {
+                        // 找到合法的交换位置！
+                        target.isMine = true;
+                        // src 已经在前面设为 false 了
+                        console.log(`[FairPlay] Moved mine from (${srcX},${srcY}) to (${tx},${ty}) to save player.`);
+                        return true;
+                    }
+                }
+            }
+
+            // 失败，还原雷
+            grid[srcY][srcX].isMine = true;
+            return false;
+        }
+
+        // 简易逻辑求解器
+        // 返回一个对象 map: { "x,y": "SAFE" | "MINE" }
+        function runLogicSolver() {
+            const status = {}; // 存储推断结果
+            // 初始化：所有未揭示格子默认为未知
+            // 我们只根据当前盘面上的数字来推断
+            
+            let changed = true;
+            // 这是一个简化的迭代求解器，只处理基础逻辑 (1-1 pattern 等复杂定式暂不处理，只处理 剩余雷数==剩余格数 和 剩余雷数==0)
+            // 对于绝大多数“二选一”死局，基础逻辑足够判断是否“已尽力”。
+            
+            // 为每个格子维护临时的“剩余未知邻居”和“剩余雷数”
+            // 这比较麻烦，直接每次迭代全盘扫描已揭示格子
+            
+            // 预先标记已知的雷（已插旗的不一定对，我们应该基于逻辑，但这里假设玩家插旗是对的？
+            // 不，严格的逻辑求解器不能信任玩家的旗子。
+            // 但为了简化，且题目目的是“二选一蒙一个”，通常这种情况下周围没有多余信息。
+            // 我们建立一个虚拟的 knowledge base。
+            
+            // 实际上，为了响应速度，我们只做单层逻辑检查：
+            // 如果某个已揭示格子：
+            // 1. 剩余雷数 == 剩余未知格数 -> 剩下的全是雷
+            // 2. 剩余雷数 == 0 -> 剩下的全是安全
+            
+            // 我们需要迭代直到没有新信息产生，因为一个推断可能触发连锁反应。
+            
+            // 状态标记：
+            // 0: 未知, 1: 逻辑确定的雷, 2: 逻辑确定的安全
+            const boardState = Array(height).fill(0).map(() => Array(width).fill(0)); 
+            
+            while(changed) {
+                changed = false;
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        const cell = grid[y][x];
+                        if (!cell.isRevealed) continue;
+                        
+                        const neighbors = getNeighbors(x, y);
+                        const unknownNeighbors = neighbors.filter(n => !n.isRevealed && boardState[n.y][n.x] !== 2); // 排除已知安全的
+                        const knownMines = neighbors.filter(n => boardState[n.y][n.x] === 1).length; // 逻辑已确认的雷
+                        
+                        // 真实的邻居雷数
+                        const realMines = countMines(x, y); 
+                        
+                        const remainingMines = realMines - knownMines;
+                        const remainingUnknowns = unknownNeighbors.filter(n => boardState[n.y][n.x] === 0); // 纯未知
+                        
+                        if (remainingMines === remainingUnknowns.length) {
+                            // 剩下的全是雷
+                            remainingUnknowns.forEach(n => {
+                                if (boardState[n.y][n.x] !== 1) {
+                                    boardState[n.y][n.x] = 1; // 标记为雷
+                                    status[`${n.x},${n.y}`] = 'MINE';
+                                    changed = true;
+                                }
+                            });
+                        } else if (remainingMines === 0) {
+                            // 剩下的全是安全
+                            remainingUnknowns.forEach(n => {
+                                if (boardState[n.y][n.x] !== 2) {
+                                    boardState[n.y][n.x] = 2; // 标记为安全
+                                    status[`${n.x},${n.y}`] = 'SAFE';
+                                    changed = true;
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+            return status;
+        }
+
+        function reveal(x, y) {
+            const cell = grid[y][x];
+            if (cell.isRevealed || cell.isFlagged) return;
+            
+            cell.isRevealed = true;
+            cell.element.classList.add('revealed');
+            revealedCount++;
+
+            const mines = countMines(x, y);
+            if (mines > 0) {
+                cell.element.textContent = mines;
+                cell.element.classList.add(`c${mines}`);
+            } else {
+                // 空格扩散
+                getNeighbors(x, y).forEach(n => {
+                    if (!n.isRevealed && !n.isFlagged) reveal(n.x, n.y);
+                });
+            }
+        }
+
+        function tryChord(x, y) {
+            const cell = grid[y][x];
+            const mines = countMines(x, y);
+            const neighbors = getNeighbors(x, y);
+            const flags = neighbors.filter(n => n.isFlagged).length;
+
+            if (flags === mines) {
+                neighbors.forEach(n => {
+                    if (!n.isRevealed && !n.isFlagged) revealWithSafety(n.x, n.y);
+                });
+            }
+        }
+
+        function explode(cell) {
+            cell.element.classList.add('bomb');
+            cell.element.innerHTML = SVG_MINE;
+            
+            gameOver = true;
+            stopTimer();
+            setFace('dead');
+
+            // 显示所有雷
+            for(let r=0; r<height; r++){
+                for(let c=0; c<width; c++){
+                    const t = grid[r][c];
+                    if(t.isMine && !t.isRevealed && !t.isFlagged) {
+                        t.element.classList.add('revealed');
+                        t.element.innerHTML = SVG_MINE;
+                    }
+                    if(!t.isMine && t.isFlagged) {
+                        t.element.classList.add('revealed');
+                        t.element.innerHTML = SVG_WRONG;
+                    }
+                }
+            }
+        }
+
+        function checkWin() {
+            if (revealedCount === width * height - mineCount) {
+                gameOver = true;
+                stopTimer();
+                setFace('cool');
+                // 标记剩余雷
+                grid.forEach(row => row.forEach(c => {
+                    if(c.isMine && !c.isFlagged) {
+                        c.isFlagged = true;
+                        c.element.innerHTML = SVG_FLAG;
+                        flags++;
+                    }
+                }));
+                updateMineCount();
+            }
+        }
+    </script>
+</body>
+</html>

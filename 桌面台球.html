@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>桌面台球 - 大师杆法版</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #1e1e1e;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+            border-radius: 20px;
+        }
+
+        canvas {
+            display: block;
+            border-radius: 8px;
+            cursor: crosshair;
+        }
+
+        /* 木质边框纹理 */
+        #table-frame {
+            position: absolute;
+            top: -25px; left: -25px; right: -25px; bottom: -25px;
+            background: #5d4037;
+            border-radius: 15px;
+            z-index: -1;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+            border: 2px solid #3e2723;
+        }
+
+        /* UI */
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            width: 100%;
+            pointer-events: none;
+            text-align: center;
+            color: #fff;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            font-family: 'Courier New', monospace;
+        }
+        
+        #score { font-size: 32px; font-weight: bold; color: #ffd700; }
+        #combo { font-size: 18px; color: #aaa; margin-top: 5px; height: 20px; }
+
+        #controls-hint {
+            position: absolute;
+            bottom: -40px;
+            width: 100%;
+            text-align: center;
+            color: #888;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="table-frame"></div>
+        <canvas id="poolCanvas"></canvas>
+        
+        <div id="ui-layer">
+            <div id="score">SCORE: 0</div>
+            <div id="combo"></div>
+        </div>
+        
+        <div id="controls-hint">按住白球拖拽蓄力，松开射击</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('poolCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- 游戏配置 ---
+        const TABLE_WIDTH = 800;
+        const TABLE_HEIGHT = 400;
+        const BALL_RADIUS = 12;
+        const POCKET_RADIUS = 22;
+        const FRICTION = 0.985; // 摩擦力 (越小停得越快)
+        const MIN_VELOCITY = 0.05; // 停止阈值
+        
+        // 物理配置
+        const CUSHION_BOUNCE = 0.7; // 库边反弹系数
+        const MAX_POWER = 25; // 最大击球力度
+
+        canvas.width = TABLE_WIDTH;
+        canvas.height = TABLE_HEIGHT;
+
+        // --- 音效系统 ---
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const audioCtx = new AudioContext();
+
+        function playSound(type, intensity = 1) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            const now = audioCtx.currentTime;
+            
+            if (type === 'hit') {
+                // 球撞击声 (短促清脆)
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.exponentialRampToValueAtTime(100, now + 0.05);
+                gain.gain.setValueAtTime(0.3 * intensity, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+                osc.start(now); osc.stop(now + 0.05);
+            } else if (type === 'pocket') {
+                // 进袋声 (低沉满足)
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(200, now);
+                osc.frequency.linearRampToValueAtTime(50, now + 0.3);
+                gain.gain.setValueAtTime(0.5, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                osc.start(now); osc.stop(now + 0.3);
+            } else if (type === 'cue') {
+                // 击球声
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.exponentialRampToValueAtTime(50, now + 0.1);
+                gain.gain.setValueAtTime(0.2 * intensity, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now); osc.stop(now + 0.1);
+            }
+        }
+
+        // --- 类定义 ---
+
+        class Vector {
+            constructor(x, y) { this.x = x; this.y = y; }
+            add(v) { return new Vector(this.x + v.x, this.y + v.y); }
+            sub(v) { return new Vector(this.x - v.x, this.y - v.y); }
+            mult(n) { return new Vector(this.x * n, this.y * n); }
+            mag() { return Math.sqrt(this.x * this.x + this.y * this.y); }
+            normalize() {
+                let m = this.mag();
+                return m === 0 ? new Vector(0, 0) : new Vector(this.x / m, this.y / m);
+            }
+            static dist(v1, v2) { return Math.sqrt((v1.x - v2.x)**2 + (v1.y - v2.y)**2); }
+            static dot(v1, v2) { return v1.x * v2.x + v1.y * v2.y; }
+        }
+
+        class Ball {
+            constructor(x, y, color, id) {
+                this.pos = new Vector(x, y);
+                this.vel = new Vector(0, 0);
+                this.radius = BALL_RADIUS;
+                this.color = color;
+                this.id = id; // 'white' or number
+                this.inPocket = false;
+            }
+
+            update() {
+                if (this.inPocket) return;
+
+                // 移动
+                this.pos = this.pos.add(this.vel);
+                
+                // 摩擦力
+                this.vel = this.vel.mult(FRICTION);
+                if (this.vel.mag() < MIN_VELOCITY) this.vel = new Vector(0, 0);
+
+                // 墙壁碰撞 (简单的矩形边界)
+                // 实际上台球桌库边有弹性系数
+                if (this.pos.x < this.radius) {
+                    this.pos.x = this.radius;
+                    this.vel.x *= -CUSHION_BOUNCE;
+                } else if (this.pos.x > TABLE_WIDTH - this.radius) {
+                    this.pos.x = TABLE_WIDTH - this.radius;
+                    this.vel.x *= -CUSHION_BOUNCE;
+                }
+
+                if (this.pos.y < this.radius) {
+                    this.pos.y = this.radius;
+                    this.vel.y *= -CUSHION_BOUNCE;
+                } else if (this.pos.y > TABLE_HEIGHT - this.radius) {
+                    this.pos.y = TABLE_HEIGHT - this.radius;
+                    this.vel.y *= -CUSHION_BOUNCE;
+                }
+
+                // 进袋检测
+                for (let p of pockets) {
+                    if (Vector.dist(this.pos, p) < POCKET_RADIUS) {
+                        this.handlePocket();
+                        break;
+                    }
+                }
+            }
+
+            handlePocket() {
+                playSound('pocket');
+                this.vel = new Vector(0, 0);
+                this.inPocket = true;
+                
+                if (this.id === 'white') {
+                    // 洗袋惩罚：重置白球
+                    setTimeout(() => {
+                        this.pos = new Vector(200, TABLE_HEIGHT/2);
+                        this.inPocket = false;
+                        this.vel = new Vector(0, 0);
+                        uiCombo.innerText = "洗袋犯规!";
+                        uiCombo.style.color = "#ff4444";
+                        score = Math.max(0, score - 50);
+                        updateScore();
+                    }, 1000);
+                } else {
+                    // 得分
+                    score += 100;
+                    comboCount++;
+                    uiCombo.innerText = comboCount > 1 ? `${comboCount} 连击!` : "好球!";
+                    uiCombo.style.color = "#ffff00";
+                    updateScore();
+                    
+                    // 检查是否清台
+                    const remaining = balls.filter(b => b.id !== 'white' && !b.inPocket).length;
+                    if (remaining === 0) {
+                        setTimeout(resetRack, 2000);
+                    }
+                }
+            }
+
+            draw() {
+                if (this.inPocket) return;
+
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+                
+                // 球体光影
+                const grad = ctx.createRadialGradient(
+                    this.pos.x - 3, this.pos.y - 3, 2,
+                    this.pos.x, this.pos.y, this.radius
+                );
+                grad.addColorStop(0, "#fff"); // 高光
+                grad.addColorStop(0.3, this.color);
+                grad.addColorStop(1, "#000"); // 阴影
+
+                ctx.fillStyle = grad;
+                ctx.fill();
+                
+                // 阴影
+                ctx.shadowColor = "rgba(0,0,0,0.5)";
+                ctx.shadowBlur = 5;
+                ctx.shadowOffsetX = 2;
+                ctx.shadowOffsetY = 2;
+                
+                // 绘制号码 (除了白球)
+                if (this.id !== 'white') {
+                    ctx.fillStyle = "#fff";
+                    ctx.shadowBlur = 0;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 0;
+                    
+                    // 给球画个白底圆形背景
+                    ctx.beginPath();
+                    ctx.arc(this.pos.x, this.pos.y, 5, 0, Math.PI*2);
+                    ctx.fill();
+
+                    ctx.fillStyle = "#000";
+                    ctx.font = "bold 8px Arial";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(this.id, this.pos.x, this.pos.y);
+                } else {
+                    ctx.shadowBlur = 0;
+                }
+            }
+        }
+
+        // --- 游戏状态 ---
+        let balls = [];
+        let pockets = [];
+        let whiteBall;
+        let isDragging = false;
+        let dragStart = new Vector(0, 0);
+        let dragCurrent = new Vector(0, 0);
+        let score = 0;
+        let comboCount = 0;
+        const uiScore = document.getElementById('score');
+        const uiCombo = document.getElementById('combo');
+
+        // 初始化袋口
+        function initPockets() {
+            pockets = [
+                new Vector(0, 0),
+                new Vector(TABLE_WIDTH/2, -5), // 稍微突出去一点
+                new Vector(TABLE_WIDTH, 0),
+                new Vector(0, TABLE_HEIGHT),
+                new Vector(TABLE_WIDTH/2, TABLE_HEIGHT+5),
+                new Vector(TABLE_WIDTH, TABLE_HEIGHT)
+            ];
+        }
+
+        // 摆球 (标准三角)
+        function resetRack() {
+            balls = [];
+            whiteBall = new Ball(200, TABLE_HEIGHT/2, "#f0f0f0", 'white');
+            balls.push(whiteBall);
+
+            const startX = 550;
+            const startY = TABLE_HEIGHT/2;
+            const ballColors = [
+                "#e6b422", "#003399", "#cc0000", "#4b0082", "#ff6600",
+                "#006400", "#800000", "#000000", "#e6b422", "#003399",
+                "#cc0000", "#4b0082", "#ff6600", "#006400", "#800000"
+            ];
+            
+            let k = 0;
+            for (let col = 0; col < 5; col++) {
+                for (let row = 0; row <= col; row++) {
+                    let x = startX + col * (BALL_RADIUS * 1.8); // 稍微紧一点
+                    let y = startY - (col * BALL_RADIUS) + (row * BALL_RADIUS * 2);
+                    // 加入一点微小随机偏移，避免完美的物理死锁
+                    x += Math.random() * 0.5;
+                    y += Math.random() * 0.5;
+                    
+                    if (k < 15) {
+                        balls.push(new Ball(x, y, ballColors[k], k+1));
+                        k++;
+                    }
+                }
+            }
+            
+            uiCombo.innerText = "新开局!";
+            uiCombo.style.color = "#fff";
+        }
+
+        function updateScore() {
+            uiScore.innerText = `SCORE: ${score}`;
+        }
+
+        // --- 物理引擎核心 ---
+        function resolveCollisions() {
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    let b1 = balls[i];
+                    let b2 = balls[j];
+                    
+                    if (b1.inPocket || b2.inPocket) continue;
+
+                    let distV = b1.pos.sub(b2.pos);
+                    let dist = distV.mag();
+
+                    if (dist < b1.radius + b2.radius) {
+                        // 碰撞发生
+                        playSound('hit', Math.min(1, (b1.vel.mag() + b2.vel.mag())/10));
+
+                        // 1. 位置修正 (防止重叠)
+                        let overlap = (b1.radius + b2.radius - dist) / 2;
+                        let normal = distV.normalize();
+                        b1.pos = b1.pos.add(normal.mult(overlap));
+                        b2.pos = b2.pos.sub(normal.mult(overlap));
+
+                        // 2. 动量交换 (弹性碰撞)
+                        // 分解速度到法线和切线方向
+                        let tangent = new Vector(-normal.y, normal.x);
+
+                        let dpTan1 = b1.vel.x * tangent.x + b1.vel.y * tangent.y;
+                        let dpTan2 = b2.vel.x * tangent.x + b2.vel.y * tangent.y;
+
+                        let dpNorm1 = b1.vel.x * normal.x + b1.vel.y * normal.y;
+                        let dpNorm2 = b2.vel.x * normal.x + b2.vel.y * normal.y;
+
+                        // 交换法线速度 (质量相同)
+                        let m1 = (dpNorm1 * (1 - 1) + 2 * 1 * dpNorm2) / (1 + 1); // 简化公式 m1=m2=1
+                        let m2 = (dpNorm2 * (1 - 1) + 2 * 1 * dpNorm1) / (1 + 1);
+                        
+                        // 实际上对于等质量物体，法线速度直接交换
+                        let temp = dpNorm1;
+                        dpNorm1 = dpNorm2;
+                        dpNorm2 = temp;
+
+                        // 重新合成
+                        b1.vel.x = tangent.x * dpTan1 + normal.x * dpNorm1;
+                        b1.vel.y = tangent.y * dpTan1 + normal.y * dpNorm1;
+                        b2.vel.x = tangent.x * dpTan2 + normal.x * dpNorm2;
+                        b2.vel.y = tangent.y * dpTan2 + normal.y * dpNorm2;
+                    }
+                }
+            }
+        }
+
+        function isBallsMoving() {
+            return balls.some(b => b.vel.mag() > 0 && !b.inPocket);
+        }
+
+        // --- 输入处理 ---
+        function getMousePos(evt) {
+            const rect = canvas.getBoundingClientRect();
+            let clientX = evt.clientX || evt.touches[0].clientX;
+            let clientY = evt.clientY || evt.touches[0].clientY;
+            return new Vector(
+                (clientX - rect.left) * (canvas.width / rect.width),
+                (clientY - rect.top) * (canvas.height / rect.height)
+            );
+        }
+
+        canvas.addEventListener('mousedown', e => {
+            if (whiteBall.inPocket || isBallsMoving()) return;
+            let m = getMousePos(e);
+            if (Vector.dist(m, whiteBall.pos) < BALL_RADIUS * 3) {
+                isDragging = true;
+                dragStart = whiteBall.pos; // 锁定起始点为白球中心
+                dragCurrent = m;
+            }
+        });
+
+        canvas.addEventListener('mousemove', e => {
+            if (isDragging) {
+                dragCurrent = getMousePos(e);
+            }
+        });
+
+        window.addEventListener('mouseup', e => {
+            if (isDragging) {
+                // 发射
+                let forceV = dragStart.sub(dragCurrent);
+                // 限制最大力度
+                if (forceV.mag() > 150) {
+                    forceV = forceV.normalize().mult(150);
+                }
+                
+                let power = forceV.mag() * 0.15; // 缩放系数
+                
+                whiteBall.vel = forceV.normalize().mult(power);
+                
+                if (power > 1) {
+                    playSound('cue', power / MAX_POWER);
+                    comboCount = 0; // 重置连击
+                    uiCombo.innerText = "";
+                }
+                
+                isDragging = false;
+            }
+        });
+
+        // 触摸支持
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            if (whiteBall.inPocket || isBallsMoving()) return;
+            let m = getMousePos(e);
+            if (Vector.dist(m, whiteBall.pos) < BALL_RADIUS * 3) {
+                isDragging = true;
+                dragStart = whiteBall.pos;
+                dragCurrent = m;
+            }
+        }, {passive: false});
+        
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (isDragging) dragCurrent = getMousePos(e);
+        }, {passive: false});
+
+        canvas.addEventListener('touchend', e => {
+            e.preventDefault();
+            if (isDragging) {
+                let forceV = dragStart.sub(dragCurrent);
+                if (forceV.mag() > 150) forceV = forceV.normalize().mult(150);
+                let power = forceV.mag() * 0.15;
+                whiteBall.vel = forceV.normalize().mult(power);
+                if (power > 1) {
+                    playSound('cue', power/MAX_POWER);
+                    comboCount = 0; 
+                    uiCombo.innerText = "";
+                }
+                isDragging = false;
+            }
+        });
+
+
+        // --- 渲染循环 ---
+        function drawTable() {
+            // 绘制台呢
+            ctx.fillStyle = "#2e7d32";
+            ctx.fillRect(0, 0, TABLE_WIDTH, TABLE_HEIGHT);
+            
+            // 绘制袋口
+            ctx.fillStyle = "#1a1a1a";
+            for (let p of pockets) {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, POCKET_RADIUS, 0, Math.PI*2);
+                ctx.fill();
+                // 阴影效果
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, POCKET_RADIUS, 0, Math.PI*2);
+                ctx.strokeStyle = "rgba(0,0,0,0.3)";
+                ctx.lineWidth = 5;
+                ctx.stroke();
+            }
+        }
+
+        function drawCue() {
+            if (!isDragging) return;
+            
+            let v = dragStart.sub(dragCurrent);
+            let len = v.mag();
+            if (len > 150) len = 150; // 视觉限制
+            
+            let angle = Math.atan2(v.y, v.x);
+            
+            ctx.save();
+            ctx.translate(whiteBall.pos.x, whiteBall.pos.y);
+            ctx.rotate(angle);
+            
+            // 瞄准线
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(len * 2, 0); // 稍微画长一点的虚线
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+            ctx.setLineDash([5, 5]);
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // 球杆
+            // 假设从白球后面开始画
+            // 偏移量根据力度拉动
+            let pullBack = 20 + len; 
+            
+            ctx.setLineDash([]);
+            // 杆身
+            ctx.beginPath();
+            ctx.moveTo(-pullBack, 0);
+            ctx.lineTo(-pullBack - 200, 0);
+            ctx.strokeStyle = "#d2b48c"; // 浅木色
+            ctx.lineWidth = 6;
+            ctx.stroke();
+            
+            // 握把
+            ctx.beginPath();
+            ctx.moveTo(-pullBack - 150, 0);
+            ctx.lineTo(-pullBack - 200, 0);
+            ctx.strokeStyle = "#3e2723"; // 深木色
+            ctx.lineWidth = 8;
+            ctx.stroke();
+            
+            // 杆头
+            ctx.beginPath();
+            ctx.moveTo(-pullBack, 0);
+            ctx.lineTo(-pullBack - 5, 0);
+            ctx.strokeStyle = "#fff";
+            ctx.lineWidth = 6;
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.moveTo(-pullBack, 0);
+            ctx.lineTo(-pullBack - 2, 0);
+            ctx.strokeStyle = "#00f"; // 皮头
+            ctx.lineWidth = 6;
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            drawTable();
+            
+            // 物理更新 (增加子步以提高精度)
+            for(let k=0; k<2; k++) {
+                resolveCollisions();
+                balls.forEach(b => b.update());
+            }
+            
+            balls.forEach(b => b.draw());
+            drawCue();
+
+            requestAnimationFrame(animate);
+        }
+
+        // 启动
+        initPockets();
+        resetRack();
+        animate();
+
+    </script>
+</body>
+</html>

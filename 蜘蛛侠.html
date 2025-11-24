@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 星际卷扬钩索 - 修复移动版</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; user-select: none; font-family: 'Segoe UI', sans-serif; }
+        
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            position: absolute;
+            top: 0; left: 0; z-index: 1;
+        }
+
+        /* 准心 */
+        #crosshair {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 8px; height: 8px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid #fff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            box-shadow: 0 0 8px #fff;
+            transition: all 0.1s;
+            z-index: 10;
+        }
+        #crosshair.active {
+            background: #00ff00;
+            border-color: #00ff00;
+            width: 14px; height: 14px;
+            border-radius: 2px;
+            transform: translate(-50%, -50%) rotate(45deg);
+            box-shadow: 0 0 15px #00ff00;
+        }
+
+        /* HUD */
+        #hud-layer {
+            position: absolute;
+            top: 20px; left: 20px;
+            color: #00ffff;
+            font-family: 'Consolas', monospace;
+            font-size: 16px;
+            pointer-events: none;
+            text-shadow: 0 0 5px #00ffff;
+            z-index: 10;
+        }
+        
+        #action-tip {
+            position: absolute;
+            bottom: 15%; width: 100%;
+            text-align: center;
+            color: #ff00ff;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 0 0 10px #ff00ff;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+            font-family: 'Arial Black', sans-serif;
+            letter-spacing: 2px;
+            z-index: 10;
+        }
+
+        /* 菜单 */
+        #menu {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(5, 5, 15, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 20;
+            backdrop-filter: blur(5px);
+        }
+        h1 { 
+            color: #00ffff; 
+            margin-bottom: 10px; 
+            text-shadow: 0 0 20px #00ffff, 2px 2px 0 #ff00ff; 
+            font-size: 3.5rem;
+            font-style: italic;
+        }
+        .key { 
+            display: inline-block;
+            border: 1px solid #00ffff; 
+            padding: 4px 12px; 
+            border-radius: 6px; 
+            color: #00ffff;
+            background: rgba(0, 255, 255, 0.1); 
+            font-weight: bold;
+            margin: 0 3px;
+            box-shadow: 0 0 5px rgba(0,255,255,0.3);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+    <div id="crosshair"></div>
+    <div id="hud-layer">
+        GRAVITY: LOW (MOON)<br>
+        MOVE: FIXED<br>
+        SPEED: <span id="vel">0</span> km/h<br>
+        STATUS: <span id="mode-text">IDLE</span>
+    </div>
+    
+    <div id="action-tip">>>> 强力收绳启动 <<<</div>
+
+    <div id="menu">
+        <h1>STAR GRAPPLE</h1>
+        <div style="background: rgba(0,0,0,0.6); padding: 30px; border-radius: 15px; text-align: center; line-height: 2.2; border: 1px solid #333;">
+            <p><span class="key">WASD</span> 地面移动 (已修复)</p>
+            <p><span class="key">SPACE</span> 喷气跳跃</p>
+            <p><span class="key">左键</span> 发射钩索</p>
+            <hr style="border-color: #444; margin: 15px 0;">
+            <p style="color: #ffff00; font-size: 1.2em;">★ 核心战术 ★</p>
+            <p>钩住物体后，按住 <span class="key">W</span> 启动卷扬机</p>
+        </div>
+        <h3 style="color:#ccc; margin-top:30px; animation: pulse 1.5s infinite;">点击屏幕开始</h3>
+        <style>@keyframes pulse { 0%,100% {opacity: 1;} 50% {opacity: 0.5;} }</style>
+    </div>
+
+    <!-- 引入库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+
+    <script>
+        // --- 核心参数 ---
+        const CFG = {
+            moveSpeed: 40,          // 地面移动速度 (直接速度)
+            jumpForce: 35,          // 跳跃力
+            gravity: -15,           // 重力
+            
+            baseGrappleForce: 350,  // 钩索基础拉力
+            winchForce: 1500,       // 卷扬机拉力
+            playerMass: 5,
+            
+            mapScale: 1500,         // 地图范围
+            buildingCount: 400      // 建筑数量
+        };
+
+        // --- 全局变量 ---
+        let world, camera, scene, renderer;
+        let playerBody; 
+        let physicsMeshes = []; 
+        
+        let isGrappling = false;
+        let grapplePoint = new CANNON.Vec3();
+        let ropeLine;
+        
+        const input = { w:0, a:0, s:0, d:0, space:0, mouse:0 };
+        let isLocked = false;
+
+        let raycaster, hitPoint;
+        let hasHit = false; 
+
+        let crosshair, modeText, actionTip;
+        let stars, nebula;
+
+        // 等待加载
+        window.addEventListener('load', () => {
+            raycaster = new THREE.Raycaster();
+            hitPoint = new THREE.Vector3();
+            
+            crosshair = document.getElementById('crosshair');
+            modeText = document.getElementById('mode-text');
+            actionTip = document.getElementById('action-tip');
+
+            init();
+            animate();
+        });
+
+        function init() {
+            initThree();
+            initCannon();
+            createLevel();
+            createPlayer();
+            setupEvents();
+        }
+
+        function initThree() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a1a);
+            scene.fog = new THREE.FogExp2(0x0a0a1a, 0.0015); 
+
+            camera = new THREE.PerspectiveCamera(85, window.innerWidth/window.innerHeight, 0.1, 3000);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // 灯光
+            const amb = new THREE.AmbientLight(0x666688);
+            scene.add(amb);
+            const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+            dir.position.set(100, 200, 100);
+            dir.castShadow = true;
+            dir.shadow.mapSize.width = 4096;
+            dir.shadow.mapSize.height = 4096;
+            dir.shadow.camera.left = -500; dir.shadow.camera.right = 500;
+            dir.shadow.camera.top = 500; dir.shadow.camera.bottom = -500;
+            scene.add(dir);
+
+            // 星空
+            createStarfield();
+
+            // 钩索线
+            const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+            const mat = new THREE.LineBasicMaterial({ color: 0x00ffaa, linewidth: 2, transparent: true, opacity: 0.8 });
+            ropeLine = new THREE.Line(geo, mat);
+            ropeLine.frustumCulled = false;
+            scene.add(ropeLine);
+        }
+
+        function createStarfield() {
+            const starGeo = new THREE.BufferGeometry();
+            const starCount = 8000;
+            const posArray = new Float32Array(starCount * 3);
+            const colArray = new Float32Array(starCount * 3);
+
+            for(let i=0; i<starCount*3; i+=3) {
+                const r = 1000 + Math.random() * 1000;
+                const theta = 2 * Math.PI * Math.random();
+                const phi = Math.acos(2 * Math.random() - 1);
+                
+                posArray[i] = r * Math.sin(phi) * Math.cos(theta);
+                posArray[i+1] = r * Math.sin(phi) * Math.sin(theta);
+                posArray[i+2] = r * Math.cos(phi);
+
+                const type = Math.random();
+                if(type > 0.8) { colArray[i]=0.8; colArray[i+1]=0.8; colArray[i+2]=1; } 
+                else if(type > 0.6) { colArray[i]=1; colArray[i+1]=0.6; colArray[i+2]=1; } 
+                else { colArray[i]=1; colArray[i+1]=1; colArray[i+2]=1; }
+            }
+
+            starGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            starGeo.setAttribute('color', new THREE.BufferAttribute(colArray, 3));
+            const starMat = new THREE.PointsMaterial({ size: 2.5, vertexColors: true, transparent: true, opacity: 0.8 });
+            stars = new THREE.Points(starGeo, starMat);
+            scene.add(stars);
+
+            // 星尘
+            const dustGeo = new THREE.BufferGeometry();
+            const dustCount = 2000;
+            const dustPos = new Float32Array(dustCount * 3);
+            for(let i=0; i<dustCount*3; i++) dustPos[i] = (Math.random() - 0.5) * 800;
+            dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+            const dustMat = new THREE.PointsMaterial({ color: 0x88ccff, size: 0.8, transparent: true, opacity: 0.4 });
+            nebula = new THREE.Points(dustGeo, dustMat);
+            scene.add(nebula);
+        }
+
+        function initCannon() {
+            world = new CANNON.World();
+            world.gravity.set(0, CFG.gravity, 0);
+            world.broadphase = new CANNON.SAPBroadphase(world);
+            const mat = new CANNON.Material();
+            // 摩擦力设为0，防止卡墙，地面移动靠代码控制速度
+            const contactMat = new CANNON.ContactMaterial(mat, mat, { friction: 0.0, restitution: 0.0 });
+            world.addContactMaterial(contactMat);
+        }
+
+        function createPlayer() {
+            const shape = new CANNON.Sphere(1);
+            playerBody = new CANNON.Body({
+                mass: CFG.playerMass,
+                shape: shape,
+                position: new CANNON.Vec3(0, 10, 0),
+                linearDamping: 0.1, 
+                fixedRotation: true
+            });
+            world.addBody(playerBody);
+        }
+
+        function createLevel() {
+            // 地面
+            const groundGeo = new THREE.PlaneGeometry(2000, 2000);
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.6, metalness: 0.2 });
+            const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+            groundMesh.rotation.x = -Math.PI / 2;
+            groundMesh.receiveShadow = true;
+            scene.add(groundMesh);
+            physicsMeshes.push(groundMesh);
+
+            const groundShape = new CANNON.Plane();
+            const groundBody = new CANNON.Body({ mass: 0 });
+            groundBody.addShape(groundShape);
+            groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
+            world.addBody(groundBody);
+
+            // 楼房
+            const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+            const boxMat = new THREE.MeshStandardMaterial({ color: 0x444455, roughness: 0.3, metalness: 0.4 });
+            const edgeMat = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 });
+            const edgeMat2 = new THREE.LineBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.3 });
+
+            for (let i = 0; i < CFG.buildingCount; i++) {
+                const w = 20 + Math.random() * 30;
+                const d = 20 + Math.random() * 30;
+                const h = 40 + Math.random() * 250;
+                const x = (Math.random() - 0.5) * CFG.mapScale;
+                const z = (Math.random() - 0.5) * CFG.mapScale;
+
+                const mesh = new THREE.Mesh(boxGeo, boxMat);
+                mesh.position.set(x, h/2, z);
+                mesh.scale.set(w, h, d);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                
+                const edges = new THREE.EdgesGeometry(boxGeo);
+                const line = new THREE.LineSegments(edges, Math.random()>0.5 ? edgeMat : edgeMat2);
+                mesh.add(line);
+
+                scene.add(mesh);
+                physicsMeshes.push(mesh);
+
+                const shape = new CANNON.Box(new CANNON.Vec3(w/2, h/2, d/2));
+                const body = new CANNON.Body({ mass: 0 });
+                body.addShape(shape);
+                body.position.set(x, h/2, z);
+                world.addBody(body);
+            }
+        }
+
+        function setupEvents() {
+            const setKey = (code, val) => {
+                switch(code) {
+                    case 'KeyW': input.w = val; break;
+                    case 'KeyS': input.s = val; break;
+                    case 'KeyA': input.a = val; break;
+                    case 'KeyD': input.d = val; break;
+                    case 'Space': input.space = val; break;
+                }
+            }
+            document.addEventListener('keydown', e => setKey(e.code, 1));
+            document.addEventListener('keyup', e => setKey(e.code, 0));
+            document.addEventListener('mousedown', e => { if(isLocked) input.mouse = 1; });
+            document.addEventListener('mouseup', e => input.mouse = 0);
+
+            document.addEventListener('mousemove', e => {
+                if(!isLocked) return;
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x -= e.movementY * 0.002;
+                camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x));
+                camera.rotation.order = 'YXZ';
+            });
+
+            document.addEventListener('click', () => {
+                if(!isLocked) document.body.requestPointerLock();
+            });
+            document.addEventListener('pointerlockchange', () => {
+                isLocked = (document.pointerLockElement === document.body);
+                document.getElementById('menu').style.display = isLocked ? 'none' : 'flex';
+            });
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth/window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (isLocked && world) {
+                world.step(1/60);
+                updateControl();
+                updateCamera();
+                updateGrapple();
+                updateParticles();
+            }
+            if (renderer && scene && camera) renderer.render(scene, camera);
+            
+            if (playerBody) {
+                const speed = Math.floor(playerBody.velocity.length() * 3.6);
+                document.getElementById('vel').innerText = speed;
+            }
+        }
+
+        function updateParticles() {
+            if (nebula) nebula.rotation.y += 0.0005;
+            if (stars) stars.rotation.y += 0.0001;
+        }
+
+        function updateControl() {
+            const camDir = new THREE.Vector3();
+            camera.getWorldDirection(camDir);
+            camDir.y = 0; camDir.normalize();
+            const camRight = new THREE.Vector3(-camDir.z, 0, camDir.x);
+
+            const moveVec = new THREE.Vector3();
+            if(input.w) moveVec.add(camDir);
+            if(input.s) moveVec.sub(camDir);
+            if(input.d) moveVec.add(camRight);
+            if(input.a) moveVec.sub(camRight);
+            moveVec.normalize();
+
+            if (!isGrappling) {
+                modeText.innerText = "FREE FLIGHT";
+                modeText.style.color = "#00ff00";
+                actionTip.style.opacity = 0;
+
+                // === 修复核心：直接速度控制 ===
+                // 之前是施加力，在低摩擦下起步会很慢
+                // 现在如果检测到输入，直接修改水平速度
+                if (moveVec.length() > 0) {
+                    playerBody.velocity.x = moveVec.x * CFG.moveSpeed;
+                    playerBody.velocity.z = moveVec.z * CFG.moveSpeed;
+                } else {
+                    // 没有输入时，给一个较大的阻尼快速停下（松手即停）
+                    playerBody.velocity.x *= 0.9;
+                    playerBody.velocity.z *= 0.9;
+                }
+
+                // 跳跃 (简单判定：垂直速度接近0)
+                if (input.space && Math.abs(playerBody.velocity.y) < 2.0) {
+                    playerBody.velocity.y = CFG.jumpForce;
+                    input.space = 0;
+                }
+            } 
+        }
+
+        function updateGrapple() {
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = raycaster.intersectObjects(physicsMeshes);
+            
+            if (intersects.length > 0) {
+                hitPoint.copy(intersects[0].point);
+                hasHit = true;
+                crosshair.classList.add('active');
+            } else {
+                hasHit = false;
+                crosshair.classList.remove('active');
+            }
+
+            if (input.mouse && !isGrappling && hasHit) {
+                isGrappling = true;
+                grapplePoint.copy(hitPoint);
+                // 初始提速
+                if (playerBody.velocity.y < 10) playerBody.velocity.y = 15;
+            } else if (!input.mouse && isGrappling) {
+                isGrappling = false;
+            }
+
+            if (isGrappling) {
+                modeText.innerText = "HOOKED";
+                modeText.style.color = "#00ffff";
+                
+                const currentPos = playerBody.position;
+                const target = new CANNON.Vec3(grapplePoint.x, grapplePoint.y, grapplePoint.z);
+                
+                const forceDir = target.vsub(currentPos);
+                forceDir.normalize();
+
+                const antiGravity = new CANNON.Vec3(0, -CFG.gravity * CFG.playerMass * 0.9, 0);
+                playerBody.applyForce(antiGravity, currentPos);
+
+                let pullForce = CFG.baseGrappleForce;
+                if (input.w) {
+                    pullForce = CFG.winchForce;
+                    modeText.innerText = ">>> WINCH <<<";
+                    modeText.style.color = "#ff00ff";
+                    actionTip.style.opacity = 1;
+                } else {
+                    actionTip.style.opacity = 0;
+                }
+
+                const force = forceDir.scale(pullForce);
+                playerBody.applyForce(force, currentPos);
+
+                // 空中机动 (左右晃动)
+                const camDir = new THREE.Vector3();
+                camera.getWorldDirection(camDir);
+                const camRight = new THREE.Vector3(-camDir.z, 0, camDir.x);
+                const sideForceMag = 300;
+                
+                if(input.d) playerBody.applyForce(new CANNON.Vec3(camRight.x*sideForceMag, 0, camRight.z*sideForceMag), currentPos);
+                if(input.a) playerBody.applyForce(new CANNON.Vec3(-camRight.x*sideForceMag, 0, -camRight.z*sideForceMag), currentPos);
+
+                if (input.space) {
+                    isGrappling = false;
+                    input.space = 0;
+                    playerBody.velocity.y += 25;
+                    const boost = camDir.multiplyScalar(30);
+                    playerBody.velocity.x += boost.x;
+                    playerBody.velocity.z += boost.z;
+                }
+
+                ropeLine.visible = true;
+                const handOffset = new THREE.Vector3(0.6, -0.4, 0.6).applyQuaternion(camera.quaternion);
+                const handPos = camera.position.clone().add(handOffset);
+                const pos = ropeLine.geometry.attributes.position.array;
+                pos[0] = handPos.x; pos[1] = handPos.y; pos[2] = handPos.z;
+                pos[3] = grapplePoint.x; pos[4] = grapplePoint.y; pos[5] = grapplePoint.z;
+                ropeLine.geometry.attributes.position.needsUpdate = true;
+
+            } else {
+                ropeLine.visible = false;
+            }
+        }
+
+        function updateCamera() {
+            if (playerBody) {
+                camera.position.set(playerBody.position.x, playerBody.position.y + 1.2, playerBody.position.z);
+            }
+        }
+    </script>
+</body>
+</html>

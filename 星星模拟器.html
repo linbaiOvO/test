@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>汐凪的无限星球生成器</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            text-align: center;
+            pointer-events: none;
+            text-shadow: 0 0 10px rgba(0, 150, 255, 0.8);
+            z-index: 10;
+        }
+        h1 {
+            font-weight: 300;
+            letter-spacing: 2px;
+            margin: 0;
+            font-size: 24px;
+        }
+        p {
+            font-size: 14px;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+        .key-hint {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 20px;
+            transition: opacity 0.5s;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <h1>🪐 无限星球生成器 🪐</h1>
+        <p>按一下 <span class="key-hint">Space 空白键</span> 生成新的星球喵！(≧◡≦)</p>
+        <p style="font-size: 12px; color: #aaa;">拖曳鼠标可以旋转视角哦~</p>
+    </div>
+
+    <div id="loading">Loading Space...</div>
+    <div id="canvas-container"></div>
+
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // 汐凪的全局变量初始化喵！
+        let scene, camera, renderer, controls;
+        let planetGroup; // 用来装星球、大气层、光环的容器
+        let stars; // 背景星星
+        
+        // 颜色库 - 给星球上色用
+        const colors = {
+            water: [0x1e3f5a, 0x2b6c9e, 0x4287f5, 0x000033, 0x1a2b3c],
+            land: [0x2d4c1e, 0x8b5a2b, 0x5c4033, 0xaaaaaa, 0xd4b483],
+            cloud: [0xffffff, 0xeeeeee, 0xddeeff],
+            atmosphere: [0x4287f5, 0x88ccff, 0xffaa00, 0xffffff]
+        };
+
+        init();
+        animate();
+
+        function init() {
+            // 1. 场景设置
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.002);
+
+            // 2. 相机设置
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 25; // 稍微拉远一点看清楚
+
+            // 3. 渲染器设置
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // 4. 控制器 (让欧尼酱可以拖动看星球)
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.enablePan = false;
+            controls.minDistance = 10;
+            controls.maxDistance = 50;
+
+            // 5. 灯光 (要有光才好看喵！)
+            const ambientLight = new THREE.AmbientLight(0x333333); // 环境光
+            scene.add(ambientLight);
+
+            const sunLight = new THREE.PointLight(0xffffff, 1.5);
+            sunLight.position.set(50, 30, 50);
+            scene.add(sunLight);
+            
+            // 背光，让星球边缘有轮廓
+            const backLight = new THREE.DirectionalLight(0x555566, 0.5);
+            backLight.position.set(-20, 0, -20);
+            scene.add(backLight);
+
+            // 6. 创建背景星星
+            createStars();
+
+            // 7. 初始化第一个星球
+            createWorld();
+
+            // 隐藏 Loading
+            document.getElementById('loading').style.opacity = 0;
+
+            // 8. 监听窗口大小变化
+            window.addEventListener('resize', onWindowResize, false);
+            
+            // 9. 监听按键 (重点喵！)
+            document.addEventListener('keydown', (event) => {
+                if (event.code === 'Space') {
+                    createWorld();
+                }
+            });
+        }
+
+        // 生成背景星星的函数
+        function createStars() {
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+            for (let i = 0; i < 3000; i++) {
+                const x = (Math.random() - 0.5) * 2000;
+                const y = (Math.random() - 0.5) * 2000;
+                const z = (Math.random() - 0.5) * 2000;
+                vertices.push(x, y, z);
+            }
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            const material = new THREE.PointsMaterial({ color: 0xffffff, size: 1.5, transparent: true, opacity: 0.8 });
+            stars = new THREE.Points(geometry, material);
+            scene.add(stars);
+        }
+
+        // 核心函数：创造世界！
+        function createWorld() {
+            // 如果已经有星球了，先销毁旧的喵~
+            if (planetGroup) {
+                scene.remove(planetGroup);
+                // 释放内存，这是好习惯哦
+                planetGroup.traverse((child) => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (child.material.map) child.material.map.dispose();
+                        child.material.dispose();
+                    }
+                });
+            }
+
+            planetGroup = new THREE.Group();
+            scene.add(planetGroup);
+
+            // 随机决定星球类型
+            const planetType = Math.random();
+            
+            // 1. 星球主体
+            const radius = 5 + Math.random() * 3; // 随机大小
+            const detail = 64; // 细节程度
+            const geometry = new THREE.SphereGeometry(radius, detail, detail);
+            
+            // 生成随机贴图
+            const texture = generatePlanetTexture(planetType);
+            const material = new THREE.MeshStandardMaterial({
+                map: texture,
+                roughness: 0.6 + Math.random() * 0.4, // 随机粗糙度
+                metalness: Math.random() * 0.2,
+            });
+            
+            // 如果是某种特殊类型（比如海洋多的），可以加高光贴图，这里简化处理喵
+            
+            const planet = new THREE.Mesh(geometry, material);
+            planet.castShadow = true;
+            planet.receiveShadow = true;
+            planetGroup.add(planet);
+            
+            // 存一些旋转数据给动画用
+            planet.userData = { 
+                rotSpeed: (Math.random() - 0.5) * 0.005 
+            };
+
+            // 2. 大气层 (Atmosphere)
+            if (Math.random() > 0.3) { // 70%概率有大气
+                const atmoGeo = new THREE.SphereGeometry(radius * 1.15, detail, detail);
+                const atmoColor = colors.atmosphere[Math.floor(Math.random() * colors.atmosphere.length)];
+                const atmoMat = new THREE.MeshPhongMaterial({
+                    color: atmoColor,
+                    transparent: true,
+                    opacity: 0.15 + Math.random() * 0.15,
+                    side: THREE.FrontSide,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false
+                });
+                const atmosphere = new THREE.Mesh(atmoGeo, atmoMat);
+                planetGroup.add(atmosphere);
+            }
+
+            // 3. 光环 (Rings)
+            if (Math.random() > 0.6) { // 40%概率有光环
+                const innerRadius = radius * (1.2 + Math.random() * 0.5);
+                const outerRadius = innerRadius + (1 + Math.random() * 3);
+                const ringGeo = new THREE.RingGeometry(innerRadius, outerRadius, 64);
+                
+                // 调整光环UV以支持纹理
+                const pos = ringGeo.attributes.position;
+                const v3 = new THREE.Vector3();
+                for (let i = 0; i < pos.count; i++){
+                    v3.fromBufferAttribute(pos, i);
+                    ringGeo.attributes.uv.setXY(i, v3.length() < (innerRadius + outerRadius)/2 ? 0 : 1, 1);
+                }
+                
+                const ringColor = 0xffffff;
+                const ringMat = new THREE.MeshStandardMaterial({
+                    color: ringColor,
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.6 + Math.random() * 0.3,
+                    map: generateRingTexture()
+                });
+                
+                const ring = new THREE.Mesh(ringGeo, ringMat);
+                ring.rotation.x = Math.PI / 2 + (Math.random() - 0.5); // 随机倾斜
+                ring.rotation.y = (Math.random() - 0.5);
+                planetGroup.add(ring);
+            }
+
+            // 4. 卫星 (Moons)
+            const moonCount = Math.floor(Math.random() * 4); // 0-3个卫星
+            for(let i=0; i<moonCount; i++) {
+                const moonR = radius * 0.1 + Math.random() * 0.3;
+                const moonGeo = new THREE.SphereGeometry(moonR, 32, 32);
+                const moonMat = new THREE.MeshStandardMaterial({
+                    color: 0x888888, // 灰色月球
+                    roughness: 0.9
+                });
+                const moon = new THREE.Mesh(moonGeo, moonMat);
+                
+                // 随机轨道参数
+                const distance = radius * 2 + Math.random() * 10;
+                const speed = 0.005 + Math.random() * 0.015;
+                const angle = Math.random() * Math.PI * 2;
+                const yOffset = (Math.random() - 0.5) * 5;
+                
+                // 把参数存在 userData 里给 animate 用
+                moon.userData = { distance, speed, angle, yOffset };
+                planetGroup.add(moon);
+            }
+            
+            // 生成的时候给个小动画，像弹出来一样
+            planetGroup.scale.set(0, 0, 0);
+        }
+
+        // 辅助函数：生成程序化纹理 (Canvas API)
+        function generatePlanetTexture(type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; // 提高分辨率
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            
+            // 填充底色
+            const baseColor = getRandomColor(type > 0.5 ? colors.water : colors.land);
+            ctx.fillStyle = baseColor;
+            ctx.fillRect(0, 0, 512, 256);
+
+            // 绘制随机噪点/地形
+            const featureCount = 20 + Math.floor(Math.random() * 50);
+            for(let i=0; i<featureCount; i++) {
+                const x = Math.random() * 512;
+                const y = Math.random() * 256;
+                const r = Math.random() * 50 + 10;
+                
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fillStyle = getRandomColor(colors.land);
+                ctx.globalAlpha = 0.4 + Math.random() * 0.6;
+                ctx.fill();
+            }
+            
+            // 气态巨行星风格的条纹 (如果是那一类)
+            if (Math.random() > 0.7) {
+                ctx.globalAlpha = 0.3;
+                for(let i=0; i<256; i+=5) {
+                    ctx.fillStyle = getRandomColor(colors.water);
+                    ctx.fillRect(0, i, 512, Math.random() * 10);
+                }
+            }
+
+            // 冰盖 (如果运气好)
+            if(Math.random() > 0.5) {
+                 ctx.fillStyle = "#ffffff";
+                 ctx.globalAlpha = 0.8;
+                 ctx.fillRect(0, 0, 512, 20 + Math.random() * 20); // 北极
+                 ctx.fillRect(0, 256 - (20 + Math.random() * 20), 512, 50); // 南极
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+
+        // 辅助函数：生成光环纹理
+        function generateRingTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 32;
+            const ctx = canvas.getContext('2d');
+            
+            // 绘制同心圆感觉的线条（在UV映射下变成环状线条）
+            const gradient = ctx.createLinearGradient(0, 0, 256, 0);
+            for(let i=0; i<5; i++) {
+                gradient.addColorStop(Math.random(), `rgba(255, 255, 255, ${Math.random()})`);
+                gradient.addColorStop(Math.random(), 'rgba(255, 255, 255, 0)');
+            }
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 256, 32);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+
+        function getRandomColor(palette) {
+            const hex = palette[Math.floor(Math.random() * palette.length)];
+            return '#' + new THREE.Color(hex).getHexString();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 1. 旋转星球组 (自转)
+            if (planetGroup) {
+                // 弹跳动画（如果还没完全变大）
+                if(planetGroup.scale.x < 1) {
+                    planetGroup.scale.x += 0.05;
+                    planetGroup.scale.y += 0.05;
+                    planetGroup.scale.z += 0.05;
+                }
+
+                // 遍历子元素做不同动画
+                planetGroup.children.forEach(child => {
+                    // 是星球本体或大气层
+                    if(child.geometry.type === 'SphereGeometry' && !child.userData.distance) {
+                        if(child.userData.rotSpeed) {
+                            child.rotation.y += child.userData.rotSpeed;
+                        }
+                    }
+                    // 是卫星
+                    if(child.userData.distance) {
+                        const ud = child.userData;
+                        ud.angle += ud.speed;
+                        child.position.x = Math.cos(ud.angle) * ud.distance;
+                        child.position.z = Math.sin(ud.angle) * ud.distance;
+                        child.position.y = Math.sin(ud.angle * 2) * 2 + ud.yOffset; // 稍微上下浮动
+                        child.rotation.y += 0.02; // 卫星自转
+                    }
+                });
+            }
+
+            // 2. 缓慢旋转背景星空
+            if (stars) {
+                stars.rotation.y += 0.0002;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>

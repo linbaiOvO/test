@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>星空漫游 — 修正版</title>
+<style>
+  html,body { margin:0; height:100%; background:#000; overflow:hidden; font-family: "Segoe UI", Roboto, sans-serif; }
+  #container { width:100vw; height:100vh; }
+  #hud {
+    position: absolute; left: 12px; top: 12px; color:#cfe; pointer-events: none;
+    text-shadow:0 1px 0 rgba(0,0,0,0.8);
+  }
+  .panel {
+    background: rgba(4,6,10,0.6); padding:10px 14px; border-radius:8px; margin-bottom:8px;
+    border:1px solid rgba(255,255,255,0.04);
+    backdrop-filter: blur(4px);
+    pointer-events: auto;
+  }
+  #controls {
+    position: absolute; right:12px; top:12px; pointer-events: auto;
+  }
+  button { padding:8px 12px; margin:4px; border-radius:6px; border:none; cursor:pointer; background:#0b6; color:#002; font-weight:700; }
+  button.secondary { background:#444; color:#ddd; }
+  #help { position:absolute; left:12px; bottom:12px; color:#aaa; font-size:13px; }
+  #center-reticle {
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:8px; height:8px;
+    border-radius:50%; background:rgba(180,255,200,0.9); mix-blend-mode:screen; pointer-events:none;
+  }
+</style>
+</head>
+<body>
+<div id="container"></div>
+
+<div id="hud">
+  <div class="panel" id="infoPanel">
+    <div>速度：<span id="speedVal">0.0</span> 单位</div>
+    <div>模式：<span id="modeVal">Cruise</span></div>
+    <div>弹射（Warp）能量：<span id="warpVal">100</span>%</div>
+  </div>
+</div>
+
+<div id="controls" class="panel">
+  <div style="margin-bottom:8px;font-weight:700;color:#dff">控制</div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px">
+    <button id="btnPointer" class="secondary">点击锁定鼠标</button>
+    <button id="btnWarp">跃迁（Warp）</button>
+    <button id="btnReset" class="secondary">重置视角</button>
+  </div>
+</div>
+
+<div id="help">W 前 • S 后 • A 左 • D 右 • Q 下 • E 上 • Shift 加速 • 鼠标转向 • 点击 “跃迁”</div>
+<div id="center-reticle"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+
+<script>
+/*
+  修正版：确保 W/S/A/D/Q/E 与摄像机朝向一致
+*/
+
+// ---- 基本场景 ----
+const container = document.getElementById('container');
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000010, 0.0006);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 10000);
+camera.position.set(0, 2, 8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+container.appendChild(renderer.domElement);
+
+// ---- 控制器 ----
+const controls = new THREE.PointerLockControls(camera, renderer.domElement);
+document.getElementById('btnPointer').onclick = () => controls.lock();
+controls.addEventListener('lock', ()=> { document.getElementById('btnPointer').innerText = '已锁定 - Esc 退出'; });
+controls.addEventListener('unlock', ()=> { document.getElementById('btnPointer').innerText = '点击锁定鼠标'; });
+
+// ---- 光照与背景 ----
+const amb = new THREE.AmbientLight(0xffffff, 0.6); scene.add(amb);
+const dir = new THREE.DirectionalLight(0xfff6e0, 0.6); dir.position.set(50,80,30); scene.add(dir);
+const skyGeo = new THREE.SphereGeometry(1000, 32, 32);
+const skyMat = new THREE.MeshBasicMaterial({ color: 0x050017, side: THREE.BackSide });
+scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+// ---- 星海 ----
+function makeStars(count=8000, spread=1200) {
+  const positions = new Float32Array(count*3);
+  const colors = new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    const i3 = i*3;
+    const r = Math.pow(Math.random(), 0.9) * spread + 50;
+    const theta = Math.random()*Math.PI*2;
+    const phi = (Math.random()-0.5)*Math.PI*0.7;
+    positions[i3] = Math.cos(theta)*Math.cos(phi)*r;
+    positions[i3+1] = Math.sin(phi)*r*0.5;
+    positions[i3+2] = Math.sin(theta)*Math.cos(phi)*r;
+    const t = Math.random();
+    const c = new THREE.Color().setHSL(0.55*(1-t)+0.08*t, 0.8, 0.6*Math.random()+0.2);
+    colors[i3]=c.r; colors[i3+1]=c.g; colors[i3+2]=c.b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors,3));
+  const mat = new THREE.PointsMaterial({ size: 1.6, vertexColors:true, depthWrite:false, transparent:true, opacity:0.95});
+  return new THREE.Points(geo, mat);
+}
+const starfield = makeStars(12000, 2400);
+scene.add(starfield);
+
+// ---- 星云 & 行星 ----
+const neb = new THREE.Mesh(new THREE.PlaneGeometry(3000,3000), new THREE.MeshBasicMaterial({ color:0x0a0020, side:THREE.DoubleSide, transparent:true, opacity:0.06 }));
+neb.rotation.x = Math.PI/2; neb.position.y = -100; scene.add(neb);
+
+const planets = [];
+function addPlanet(radius, dist, speed, color, tilt=0.0){
+  const g = new THREE.SphereGeometry(radius, 32, 18);
+  const m = new THREE.MeshStandardMaterial({ color, roughness:0.7, metalness:0.05 });
+  const mesh = new THREE.Mesh(g,m);
+  mesh.position.set(dist, 0, 0);
+  mesh.userData = { orbitRadius: dist, orbitSpeed: speed, orbitAngle: Math.random()*Math.PI*2, tilt };
+  scene.add(mesh);
+  if(radius > 2.2){
+    const ring = new THREE.RingGeometry(radius*1.6, radius*2.4, 64);
+    const rmat = new THREE.MeshBasicMaterial({ color:0xffffff, side:THREE.DoubleSide, transparent:true, opacity:0.06 });
+    const rmesh = new THREE.Mesh(ring, rmat);
+    rmesh.rotation.x = Math.PI/2;
+    mesh.add(rmesh);
+  }
+  planets.push(mesh);
+}
+addPlanet(1.8, 40, 0.0022, 0x5577ff);
+addPlanet(3.5, 80, 0.0012, 0xff8844);
+addPlanet(2.6, 120, 0.0009, 0xaaffcc);
+addPlanet(6.0, 220, 0.0004, 0xffdd88);
+
+// ---- 飞行变量 ----
+const state = {
+  velocity: new THREE.Vector3(),
+  accel: 80.0,
+  maxSpeed: 120.0,
+  warpSpeed: 900.0,
+  damping: 0.92,
+  warpEnergy: 100,
+  warpCooldown: 0
+};
+
+// 键盘输入
+const keys = {};
+window.addEventListener('keydown', (e)=>{ keys[e.code]=true; });
+window.addEventListener('keyup', (e)=>{ keys[e.code]=false; });
+
+// HUD
+const speedEl = document.getElementById('speedVal');
+const modeEl = document.getElementById('modeVal');
+const warpEl = document.getElementById('warpVal');
+
+document.getElementById('btnWarp').onclick = triggerWarp;
+document.getElementById('btnReset').onclick = ()=> {
+  camera.position.set(0,2,8);
+  camera.rotation.set(0,0,0);
+  state.velocity.set(0,0,0);
+};
+
+function triggerWarp(){
+  if(state.warpEnergy >= 25 && state.warpCooldown <= 0){
+    state.warpCooldown = 2.5;
+    state.warpEnergy = Math.max(0, state.warpEnergy - 25);
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    forward.normalize();
+    state.velocity.copy(forward.multiplyScalar(state.warpSpeed));
+    gsapWarpFlash();
+  }
+}
+function gsapWarpFlash(){
+  const orig = scene.fog.density;
+  let t0 = performance.now();
+  const dur = 350;
+  const step = ()=>{
+    const p = (performance.now()-t0)/dur;
+    if(p>=1){ scene.fog.density = orig; return; }
+    scene.fog.density = orig + (0.004 - orig) * (1 - Math.cos(p*Math.PI))/2;
+    requestAnimationFrame(step);
+  };
+  step();
+}
+
+// ---- 主循环（含修正后的移动逻辑） ----
+let last = performance.now();
+function tick(){
+  const now = performance.now();
+  const dt = Math.min((now-last)/1000, 0.05);
+  last = now;
+
+  // 行星公转
+  planets.forEach(p=>{
+    p.userData.orbitAngle += p.userData.orbitSpeed * (dt*1000);
+    const a = p.userData.orbitAngle;
+    p.position.set(Math.cos(a)*p.userData.orbitRadius, Math.sin(p.userData.tilt||0)*2, Math.sin(a)*p.userData.orbitRadius);
+    p.rotation.y += 0.002 * (1 + (p.userData.orbitRadius/100));
+  });
+
+  // ========== 关键：用 camera.getWorldDirection 得到朝向 ==========
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward); // 得到摄像机视线方向（指向视线前方）
+  forward.y = 0; // 保证水平运动（不随抬头低头上下移动）
+  if(forward.lengthSq() === 0) forward.set(0,0,-1);
+  forward.normalize();
+
+  // 右向量 = forward × up
+  const up = new THREE.Vector3(0,1,0);
+  const right = new THREE.Vector3().copy(forward).cross(up).normalize();
+
+  // 构建期望移动方向（世界空间）
+  let wish = new THREE.Vector3();
+  if(keys['KeyW']) wish.add(forward);          // W: 向摄像机看的方向前进
+  if(keys['KeyS']) wish.add(forward.clone().negate()); // S: 后退
+  if(keys['KeyA']) wish.add(right.clone().negate());   // A: 向左
+  if(keys['KeyD']) wish.add(right);                   // D: 向右
+  // Q/E 控制世界上下（不会随镜头倾斜）
+  if(keys['KeyQ']) wish.add(up.clone().negate());     // Q: 向下（下降）
+  if(keys['KeyE']) wish.add(up);                      // E: 向上（上升）
+
+  // 应用加速与限速
+  if(wish.lengthSq() > 0) {
+    wish.normalize();
+    const isBoost = keys['ShiftLeft'] || keys['ShiftRight'];
+    const accel = state.accel * (isBoost ? 3.0 : 1.0);
+    const targetSpeed = (state.warpCooldown > 0) ? state.warpSpeed : state.maxSpeed;
+    // 以期望方向为基准叠加速度（保留现有速度在其它轴的分量）
+    const add = wish.multiplyScalar(accel * dt);
+    state.velocity.add(add);
+    // 限制平面速度（总速度长度）
+    if(state.velocity.length() > targetSpeed) state.velocity.setLength(targetSpeed);
+  } else {
+    // 阻尼
+    state.velocity.multiplyScalar(Math.pow(state.damping, dt*60));
+    // 避免无穷接近 0 时震荡
+    if(state.velocity.length() < 0.0001) state.velocity.set(0,0,0);
+  }
+
+  // 应用位移
+  camera.position.add(state.velocity.clone().multiplyScalar(dt));
+
+  // 恢复资源与 HUD
+  if(state.warpEnergy < 100) state.warpEnergy = Math.min(100, state.warpEnergy + 10 * dt);
+  if(state.warpCooldown > 0) state.warpCooldown = Math.max(0, state.warpCooldown - dt);
+  speedEl.innerText = state.velocity.length().toFixed(1);
+  warpEl.innerText = Math.round(state.warpEnergy);
+  modeEl.innerText = (state.warpCooldown>0 || state.velocity.length()>state.maxSpeed) ? 'Warp' : 'Cruise';
+
+  // 视觉味道
+  starfield.rotation.y += 0.00005 * state.velocity.length();
+  neb.position.x = camera.position.x * 0.02;
+  neb.position.z = camera.position.z * 0.02;
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+
+// 窗口
+window.addEventListener('resize', ()=> {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+
+</body>
+</html>

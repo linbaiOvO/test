@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>汐凪的霓虹冰球 (Neon Hockey Deluxe) (≧◡≦)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #050510;
+            color: white;
+            user-select: none;
+        }
+        #game-container {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center;
+        }
+        canvas {
+            background: radial-gradient(circle at center, #1a1a2e 0%, #000000 100%);
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.1);
+            border-radius: 20px;
+            border: 4px solid #333;
+            cursor: default; 
+        }
+        
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* HUD 分数板 */
+        #scoreboard {
+            position: absolute;
+            top: 50%;
+            left: 20px;
+            transform: translateY(-50%);
+            display: none; 
+            flex-direction: column;
+            gap: 40px;
+            font-size: 48px;
+            font-weight: bold;
+            color: rgba(255, 255, 255, 0.5);
+        }
+        .score-box {
+            text-align: center;
+            background: rgba(0,0,0,0.5);
+            padding: 10px 20px;
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(5px);
+        }
+        #ai-score { color: #ff0055; text-shadow: 0 0 20px #ff0055; }
+        #player-score { color: #00ccff; text-shadow: 0 0 20px #00ccff; }
+        .label { font-size: 14px; color: #aaa; display: block; margin-bottom: 5px; letter-spacing: 2px; }
+
+        /* 通用菜单样式 */
+        .screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(10, 10, 20, 0.85);
+            backdrop-filter: blur(15px);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            z-index: 100;
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        h1 {
+            margin: 0 0 30px 0;
+            font-size: 72px;
+            background: linear-gradient(to bottom, #00ffff, #0066ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 20px rgba(0,255,255,0.5));
+            font-weight: 900;
+            letter-spacing: 5px;
+            font-style: italic;
+        }
+
+        h2 { color: #fff; font-size: 36px; margin-bottom: 30px; }
+
+        p { color: #ddd; font-size: 20px; margin-bottom: 40px; text-align: center; line-height: 1.6; }
+        
+        button {
+            background: transparent;
+            border: 2px solid #00ccff;
+            padding: 15px 60px;
+            color: #00ccff;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 0 15px rgba(0, 204, 255, 0.2);
+            text-transform: uppercase;
+            margin: 10px;
+            position: relative;
+            overflow: hidden;
+            min-width: 250px;
+        }
+        button::before {
+            content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0,255,255,0.2), transparent);
+            transition: 0.5s;
+        }
+        button:hover::before { left: 100%; }
+        button:hover { 
+            background: #00ccff; color: #000; 
+            box-shadow: 0 0 40px rgba(0, 204, 255, 0.8); 
+            transform: scale(1.05);
+        }
+        
+        /* 难度按钮颜色 */
+        .btn-easy { border-color: #00ff00; color: #00ff00; }
+        .btn-easy:hover { background: #00ff00; color: #000; box-shadow: 0 0 40px rgba(0, 255, 0, 0.8); }
+        
+        .btn-normal { border-color: #ffd700; color: #ffd700; }
+        .btn-normal:hover { background: #ffd700; color: #000; box-shadow: 0 0 40px rgba(255, 215, 0, 0.8); }
+        
+        .btn-hard { border-color: #ff0055; color: #ff0055; }
+        .btn-hard:hover { background: #ff0055; color: #fff; box-shadow: 0 0 40px rgba(255, 0, 85, 0.8); }
+
+        button.secondary {
+            border-color: #888; color: #888; font-size: 18px; padding: 12px 40px;
+            box-shadow: none; min-width: auto;
+        }
+        button.secondary:hover {
+            background: #888; color: #000; border-color: #888;
+            box-shadow: 0 0 20px rgba(200,200,200,0.5);
+        }
+
+        #home-screen { display: flex; }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="600" height="800"></canvas>
+    </div>
+
+    <div id="ui-layer">
+        <div id="scoreboard">
+            <div class="score-box">
+                <span class="label">ENEMY AI</span>
+                <span id="ai-score">0</span>
+            </div>
+            <div class="score-box">
+                <span class="label">PLAYER</span>
+                <span id="player-score">0</span>
+            </div>
+        </div>
+
+        <!-- 1. 主界面 -->
+        <div id="home-screen" class="screen">
+            <h1>NEON HOCKEY</h1>
+            <p>光速反应 · 物理碰撞 · 7分决胜<br><span style="font-size: 14px; color: #aaa;">鼠标控制 | ESC 暂停</span></p>
+            <button onclick="showDifficultySelect()">START GAME</button>
+        </div>
+
+        <!-- 2. 难度选择 -->
+        <div id="difficulty-screen" class="screen">
+            <h2>SELECT DIFFICULTY</h2>
+            <button class="btn-easy" onclick="startGame('easy')">EASY (简单)</button>
+            <button class="btn-normal" onclick="startGame('normal')">NORMAL (普通)</button>
+            <button class="btn-hard" onclick="startGame('hard')">HARD (困难)</button>
+            <button class="secondary" onclick="goHome()">BACK</button>
+        </div>
+
+        <!-- 3. 暂停菜单 -->
+        <div id="pause-screen" class="screen" style="background: rgba(0,0,0,0.6);">
+            <h1 style="font-size: 48px; -webkit-text-fill-color: white;">PAUSED</h1>
+            <button onclick="togglePause()">RESUME</button>
+            <button class="secondary" onclick="goHome()">MAIN MENU</button>
+        </div>
+
+        <!-- 4. 结算界面 -->
+        <div id="end-screen" class="screen">
+            <h1 id="result-title" style="font-size: 80px;">WIN!</h1>
+            <p id="result-msg">欧尼酱太强了！</p>
+            <button onclick="showDifficultySelect()">REPLAY</button>
+            <button class="secondary" onclick="goHome()">MAIN MENU</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const PADDLE_RADIUS = 30;
+        const PUCK_RADIUS = 20;
+        const GOAL_WIDTH = 240;
+        const WIN_SCORE = 7;
+        const MAX_SPEED = 18;
+        const FRICTION = 0.995; 
+
+        // AI 难度参数
+        const DIFFICULTIES = {
+            'easy': { speed: 3, reaction: 0.03, error: 30 },   // 慢，反应迟钝，误差大
+            'normal': { speed: 6, reaction: 0.08, error: 10 }, // 标准
+            'hard': { speed: 10, reaction: 0.15, error: 0 }    // 快，反应灵敏，无误差
+        };
+        let currentDifficulty = 'normal';
+
+        const STATE = { HOME: 0, DIFFICULTY: 1, PLAYING: 2, PAUSED: 3, END: 4 };
+        let currentState = STATE.HOME;
+
+        let playerScore = 0;
+        let aiScore = 0;
+        let particles = []; 
+
+        const player = {
+            x: canvas.width / 2, y: canvas.height - 100,
+            radius: PADDLE_RADIUS, color: '#00ccff', glow: '#00ffff'
+        };
+
+        const ai = {
+            x: canvas.width / 2, y: 100,
+            radius: PADDLE_RADIUS, color: '#ff0055', glow: '#ff3366',
+            speed: 6, targetX: canvas.width / 2
+        };
+
+        const puck = {
+            x: canvas.width / 2, y: canvas.height / 2,
+            vx: 0, vy: 0,
+            radius: PUCK_RADIUS, color: '#ffffff', glow: '#ffffff'
+        };
+
+        let mouseX = canvas.width / 2;
+        let mouseY = canvas.height - 100;
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (currentState !== STATE.PLAYING) return;
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+        });
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Escape') {
+                if (currentState === STATE.PLAYING || currentState === STATE.PAUSED) togglePause();
+            }
+        });
+
+        requestAnimationFrame(gameLoop);
+
+        function goHome() {
+            currentState = STATE.HOME;
+            hideAllScreens();
+            document.getElementById('home-screen').style.display = 'flex';
+            canvas.style.cursor = 'default';
+            resetPuck();
+            puck.vx = 4; puck.vy = 4; // 背景动画慢一点
+        }
+
+        function showDifficultySelect() {
+            currentState = STATE.DIFFICULTY;
+            hideAllScreens();
+            document.getElementById('difficulty-screen').style.display = 'flex';
+        }
+
+        function startGame(difficulty) {
+            currentDifficulty = difficulty;
+            // 应用 AI 难度
+            ai.speed = DIFFICULTIES[difficulty].speed;
+            
+            playerScore = 0;
+            aiScore = 0;
+            updateScoreUI();
+            resetPuck();
+            
+            hideAllScreens();
+            document.getElementById('scoreboard').style.display = 'flex';
+            canvas.style.cursor = 'none'; 
+            
+            currentState = STATE.PLAYING;
+        }
+        
+        function togglePause() {
+            if (currentState === STATE.PLAYING) {
+                currentState = STATE.PAUSED;
+                document.getElementById('pause-screen').style.display = 'flex';
+                canvas.style.cursor = 'default';
+            } else if (currentState === STATE.PAUSED) {
+                currentState = STATE.PLAYING;
+                document.getElementById('pause-screen').style.display = 'none';
+                canvas.style.cursor = 'none';
+            }
+        }
+
+        function hideAllScreens() {
+            document.querySelectorAll('.screen').forEach(el => el.style.display = 'none');
+            document.getElementById('scoreboard').style.display = 'none';
+        }
+
+        function resetPuck(winner) {
+            puck.x = canvas.width / 2;
+            puck.y = canvas.height / 2;
+            puck.vx = 0;
+            puck.vy = 0;
+            
+            if (currentState === STATE.PLAYING) {
+                setTimeout(() => {
+                    if (currentState !== STATE.PLAYING) return;
+                    let dirY = winner === 'player' ? -1 : 1; 
+                    if (!winner) dirY = Math.random() > 0.5 ? 1 : -1;
+                    puck.vx = (Math.random() - 0.5) * 10;
+                    puck.vy = dirY * 8;
+                }, 1000);
+            }
+        }
+
+        function updateScoreUI() {
+            document.getElementById('player-score').innerText = playerScore;
+            document.getElementById('ai-score').innerText = aiScore;
+        }
+
+        function checkWin() {
+            if (playerScore >= WIN_SCORE || aiScore >= WIN_SCORE) {
+                currentState = STATE.END;
+                canvas.style.cursor = 'default';
+                
+                const win = playerScore >= WIN_SCORE;
+                const title = document.getElementById('result-title');
+                const msg = document.getElementById('result-msg');
+                
+                if (win) {
+                    title.innerText = "VICTORY!";
+                    title.style.background = "linear-gradient(to bottom, #00ff00, #00cc00)";
+                    title.style.webkitBackgroundClip = "text";
+                    title.style.webkitTextFillColor = "transparent";
+                    msg.innerText = `欧尼酱在 ${currentDifficulty.toUpperCase()} 难度下获胜了！`;
+                } else {
+                    title.innerText = "DEFEAT...";
+                    title.style.background = "linear-gradient(to bottom, #ff0055, #cc0033)";
+                    title.style.webkitBackgroundClip = "text";
+                    title.style.webkitTextFillColor = "transparent";
+                    msg.innerText = "不要灰心，再来一局喵！";
+                }
+                
+                document.getElementById('end-screen').style.display = 'flex';
+            }
+        }
+
+        function gameLoop() {
+            if (currentState === STATE.PLAYING) {
+                update();
+            } else if (currentState === STATE.HOME || currentState === STATE.DIFFICULTY) {
+                updateAutoPlay();
+            }
+            
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function updateAutoPlay() {
+             puck.x += puck.vx;
+             puck.y += puck.vy;
+             if (puck.x - puck.radius < 0 || puck.x + puck.radius > canvas.width) puck.vx *= -1;
+             if (puck.y - puck.radius < 0 || puck.y + puck.radius > canvas.height) puck.vy *= -1;
+             createParticles(puck.x, puck.y, '#00ffff', 1);
+             updateParticles();
+        }
+
+        function update() {
+            // 1. Player
+            let targetY = Math.max(canvas.height / 2 + player.radius, Math.min(canvas.height - player.radius, mouseY));
+            let targetX = Math.max(player.radius, Math.min(canvas.width - player.radius, mouseX));
+            player.x = targetX;
+            player.y = targetY;
+
+            // 2. AI (应用难度系数)
+            const settings = DIFFICULTIES[currentDifficulty];
+            let aiDestX = puck.x;
+            let aiDestY = 100; 
+
+            // 加上随机误差（模拟人类失误）
+            // error 越大，AI 瞄准越歪
+            let randomError = (Math.random() - 0.5) * settings.error;
+
+            if (puck.y < canvas.height / 2) {
+                if (puck.y < ai.y - 5) {
+                    // 紧急避让
+                    if (puck.x < canvas.width / 2) aiDestX = puck.x + 100;
+                    else aiDestX = puck.x - 100;
+                    aiDestY = puck.y + 50;
+                } else {
+                    // 进攻
+                    aiDestX = puck.x + randomError;
+                    aiDestY = puck.y - 35; 
+                    
+                    // 防卡墙
+                    if (puck.x < PUCK_RADIUS + 15) aiDestX = puck.x + 25;
+                    else if (puck.x > canvas.width - PUCK_RADIUS - 15) aiDestX = puck.x - 25;
+                }
+            } else {
+                // 防守
+                aiDestX = puck.x * 0.3 + canvas.width/2 * 0.7;
+                aiDestY = 100;
+            }
+            
+            aiDestX = Math.max(ai.radius, Math.min(canvas.width - ai.radius, aiDestX));
+            aiDestY = Math.max(ai.radius, Math.min(canvas.height / 2 - ai.radius, aiDestY));
+
+            // 反应速度插值
+            ai.x += (aiDestX - ai.x) * settings.reaction;
+            ai.y += (aiDestY - ai.y) * settings.reaction;
+
+            // 3. Puck Physics
+            puck.x += puck.vx;
+            puck.y += puck.vy;
+            puck.vx *= FRICTION;
+            puck.vy *= FRICTION;
+            
+            let speed = Math.sqrt(puck.vx * puck.vx + puck.vy * puck.vy);
+            if (speed > MAX_SPEED) {
+                puck.vx = (puck.vx / speed) * MAX_SPEED;
+                puck.vy = (puck.vy / speed) * MAX_SPEED;
+            }
+
+            if (puck.x - puck.radius < 0) {
+                puck.x = puck.radius; puck.vx *= -1;
+                createParticles(puck.x, puck.y, '#00ffff');
+            } else if (puck.x + puck.radius > canvas.width) {
+                puck.x = canvas.width - puck.radius; puck.vx *= -1;
+                createParticles(puck.x, puck.y, '#00ffff');
+            }
+
+            if (puck.y - puck.radius < 0) {
+                if (puck.x > (canvas.width - GOAL_WIDTH) / 2 && puck.x < (canvas.width + GOAL_WIDTH) / 2) {
+                    playerScore++;
+                    updateScoreUI();
+                    createParticles(puck.x, puck.y, '#00ff00', 50);
+                    checkWin();
+                    if (currentState === STATE.PLAYING) resetPuck('player');
+                } else {
+                    puck.y = puck.radius; puck.vy *= -1;
+                    createParticles(puck.x, puck.y, '#00ffff');
+                }
+            } else if (puck.y + puck.radius > canvas.height) {
+                if (puck.x > (canvas.width - GOAL_WIDTH) / 2 && puck.x < (canvas.width + GOAL_WIDTH) / 2) {
+                    aiScore++;
+                    updateScoreUI();
+                    createParticles(puck.x, puck.y, '#ff0000', 50);
+                    checkWin();
+                    if (currentState === STATE.PLAYING) resetPuck('ai');
+                } else {
+                    puck.y = canvas.height - puck.radius; puck.vy *= -1;
+                    createParticles(puck.x, puck.y, '#00ffff');
+                }
+            }
+
+            checkPaddleCollision(player);
+            checkPaddleCollision(ai);
+            updateParticles();
+        }
+
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx; p.y += p.vy; p.life -= 0.05;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+        }
+
+        function checkPaddleCollision(paddle) {
+            let dx = puck.x - paddle.x;
+            let dy = puck.y - paddle.y;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+            let minDist = paddle.radius + puck.radius;
+
+            if (dist < minDist) {
+                let angle = Math.atan2(dy, dx);
+                let targetX = paddle.x + Math.cos(angle) * minDist;
+                let targetY = paddle.y + Math.sin(angle) * minDist;
+                puck.x = targetX;
+                puck.y = targetY;
+
+                let speed = Math.sqrt(puck.vx * puck.vx + puck.vy * puck.vy);
+                speed = Math.max(speed * 1.1, 10); 
+                puck.vx = Math.cos(angle) * speed;
+                puck.vy = Math.sin(angle) * speed;
+                createParticles(puck.x, puck.y, paddle.color, 15);
+            }
+        }
+
+        function createParticles(x, y, color, count = 5) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10,
+                    life: 1.0, color: color
+                });
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(0, canvas.height / 2); ctx.lineTo(canvas.width, canvas.height / 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(canvas.width / 2, canvas.height / 2, 80, 0, Math.PI * 2); ctx.stroke();
+            
+            ctx.strokeStyle = '#ff0055'; ctx.strokeRect((canvas.width - GOAL_WIDTH)/2, -10, GOAL_WIDTH, 20);
+            ctx.strokeStyle = '#00ccff'; ctx.strokeRect((canvas.width - GOAL_WIDTH)/2, canvas.height-10, GOAL_WIDTH, 20);
+
+            for (let p of particles) {
+                ctx.fillStyle = p.color; ctx.globalAlpha = p.life;
+                ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            drawGlowCircle(player.x, player.y, player.radius, player.color, player.glow);
+            drawGlowCircle(ai.x, ai.y, ai.radius, ai.color, ai.glow);
+            drawGlowCircle(puck.x, puck.y, puck.radius, puck.color, puck.glow);
+        }
+
+        function drawGlowCircle(x, y, radius, color, glowColor) {
+            ctx.shadowBlur = 20; ctx.shadowColor = glowColor;
+            ctx.fillStyle = color;
+            ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0; 
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.beginPath(); ctx.arc(x - radius*0.3, y - radius*0.3, radius*0.2, 0, Math.PI * 2); ctx.fill();
+        }
+    </script>
+</body>
+</html>
