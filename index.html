@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>林白的日记本</title>
+    <!-- 引入 Tailwind CSS 美化样式 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 引入好看的衬线字体，更有书卷气 */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap');
+        body { font-family: 'Noto Serif SC', serif; }
+        
+        /* 背景的小圆点花纹 */
+        .bg-pattern {
+            background-color: #fdf2f8;
+            background-image: radial-gradient(#fbcfe8 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        
+        /* 漂浮动画 */
+        .animate-float { animation: float 6s ease-in-out infinite; }
+        @keyframes float { 
+            0% { transform: translateY(0px); } 
+            50% { transform: translateY(-20px); } 
+            100% { transform: translateY(0px); } 
+        }
+    </style>
+</head>
+<body class="bg-pattern min-h-screen flex flex-col items-center justify-center p-6 text-center overflow-hidden relative">
+
+    <!-- 背景装饰光斑 -->
+    <div class="absolute top-1/4 left-1/4 w-64 h-64 bg-purple-200/30 rounded-full blur-3xl animate-float"></div>
+    <div class="absolute bottom-1/4 right-1/4 w-80 h-80 bg-pink-200/30 rounded-full blur-3xl animate-float" style="animation-delay: -2s;"></div>
+
+    <!-- 主卡片 -->
+    <main class="relative z-10 bg-white/60 backdrop-blur-sm p-12 rounded-[3rem] shadow-xl border border-white/50 max-w-md w-full transition-transform hover:scale-105 duration-500">
+        <div class="text-6xl mb-6">📔</div>
+        
+        <h1 class="text-4xl md:text-5xl font-bold text-slate-800 mb-4 tracking-wider">
+            林白的<br>
+            <span class="text-pink-500">日记本</span>
+        </h1>
+        
+        <p class="text-slate-500 mb-12 text-sm md:text-base italic">
+            "记录每一个闪闪发光的瞬间..."
+        </p>
+
+        <!-- 进入按钮：链接到 diary.html -->
+        <a href="diary.html" class="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-gradient-to-r from-pink-500 to-purple-500 rounded-full hover:shadow-lg hover:shadow-pink-500/30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 active:scale-95">
+            <span class="absolute inset-0 w-full h-full -mt-1 rounded-lg opacity-30 bg-gradient-to-b from-transparent via-transparent to-black"></span>
+            <span class="relative flex items-center gap-2">
+                开启日记
+                <!-- 一个小箭头图标 -->
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+            </span>
+        </a>
+    </main>
+
+    <footer class="absolute bottom-6 text-slate-400 text-xs">
+        &copy; 2025 Linbai's Diary
+    </footer>
+
+</body>
+</html>
