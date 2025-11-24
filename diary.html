@@ -13,37 +13,43 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen text-slate-800 pb-24 opacity-0 transition-opacity duration-500" id="mainBody">
+<body class="bg-slate-50 min-h-screen text-slate-800 pb-24">
 
     <header class="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200">
         <div class="max-w-2xl mx-auto px-4 h-16 flex items-center justify-between">
-            <button id="logoutBtn" class="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors">
+            <a href="index.html" class="text-slate-400 hover:text-pink-500 transition-colors"><i data-lucide="home" class="w-6 h-6"></i></a>
+            <h1 class="font-bold text-lg text-slate-700">林白的记忆碎片</h1>
+            <!-- 只有登录才显示的退出按钮 -->
+            <button id="logoutBtn" class="hidden text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors">
                 <i data-lucide="log-out" class="w-4 h-4"></i> 退出
             </button>
-            <h1 class="font-bold text-lg text-slate-700">林白的记忆碎片</h1>
-            <div class="w-8"></div>
+            <div id="guestPlaceholder" class="w-6"></div> <!-- 游客占位 -->
         </div>
     </header>
 
     <main class="max-w-2xl mx-auto p-4 md:p-6">
         <div id="statusMsg" class="hidden mb-4 p-3 rounded-xl text-sm font-medium text-center animate-bounce"></div>
         <div id="postsContainer" class="space-y-4">
-            <div class="text-center py-10"><div class="loader mx-auto mb-3"></div><p class="text-slate-400 text-sm">正在解密日记...</p></div>
+            <div class="text-center py-10"><div class="loader mx-auto mb-3"></div><p class="text-slate-400 text-sm">正在加载记忆...</p></div>
         </div>
     </main>
 
-    <a href="write.html" class="fixed bottom-8 right-8 w-14 h-14 bg-gradient-to-r from-pink-500 to-purple-500 text-white rounded-full shadow-lg shadow-pink-500/40 flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-300 z-40 group">
-        <i data-lucide="plus" class="w-8 h-8 group-hover:rotate-90 transition-transform duration-300"></i>
+    <!-- ➕ 添加按钮 (只有管理员可见) -->
+    <a href="write.html" id="addBtn" class="hidden fixed bottom-8 right-8 w-14 h-14 bg-gradient-to-r from-pink-500 to-purple-500 text-white rounded-full shadow-lg hover:scale-110 active:scale-95 transition-all z-40 items-center justify-center">
+        <i data-lucide="plus" class="w-8 h-8"></i>
     </a>
 
-    <!-- 弹窗部分保持不变，为了篇幅省略，实际上应该保留之前的删除弹窗代码 -->
+    <!-- 详情弹窗 -->
     <div id="postModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm hidden z-50 flex items-end md:items-center justify-center p-0 md:p-4 transition-opacity">
         <div class="bg-white w-full md:max-w-xl h-[85vh] md:h-auto md:max-h-[80vh] rounded-t-3xl md:rounded-3xl shadow-2xl p-6 relative flex flex-col animate-slide-up">
             <div class="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
-                <button id="deleteBtn" class="text-red-400 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 transition-colors">
-                    <i data-lucide="trash-2" class="w-4 h-4"></i> 删除
-                </button>
-                <button id="closeModal" class="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-500 transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+                <!-- 管理员操作区 -->
+                <div id="adminActions" class="hidden flex gap-3">
+                    <button id="editBtn" class="text-blue-500 hover:bg-blue-50 px-3 py-1.5 rounded-lg text-sm font-bold flex gap-1"><i data-lucide="edit" class="w-4 h-4"></i> 编辑</button>
+                    <button id="deleteBtn" class="text-red-400 hover:bg-red-50 px-3 py-1.5 rounded-lg text-sm font-bold flex gap-1"><i data-lucide="trash-2" class="w-4 h-4"></i> 删除</button>
+                </div>
+                <div id="guestActions" class="text-sm text-slate-400">日记详情</div>
+                <button id="closeModal" class="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-500"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             <div id="modalContent" class="overflow-y-auto flex-1 pr-2"></div>
         </div>
@@ -52,8 +58,9 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, getDocs, query, orderBy, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, query, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+        // ⚠️ 欧尼酱的配置 (保持不变)
         const firebaseConfig = {
             apiKey: "AIzaSyDdqCijPyu6KDVAQMIrNUV2qAPTkk0Ree0",
             authDomain: "linbai-blog.firebaseapp.com",
@@ -69,84 +76,133 @@
         const db = getFirestore(app);
         const postsCollection = collection(db, 'posts');
 
-        // 🛡️ 安全检查：如果没有登录，直接踢回首页
+        let isAdmin = false; // 记录当前是不是管理员
+        let currentPostId = null; // 当前查看的日记 ID
+
+        // 🕵️‍♀️ 侦探模式：检查你是谁
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                document.getElementById('mainBody').classList.remove('opacity-0'); // 验证通过，显示页面
-                loadPosts(); // 加载日记
+                isAdmin = true;
+                document.getElementById('logoutBtn').classList.remove('hidden');
+                document.getElementById('guestPlaceholder').classList.add('hidden');
+                document.getElementById('addBtn').classList.remove('hidden'); // 显示添加按钮
+                document.getElementById('addBtn').style.display = 'flex';
+                showStatus("欢迎回来，欧尼酱！已开启管理员视角 👀", "success");
             } else {
-                window.location.href = 'index.html'; // 踢出去
+                isAdmin = false;
             }
+            loadPosts(); // 身份确定后，加载日记
         });
 
         // 退出登录
         document.getElementById('logoutBtn').onclick = () => {
-            signOut(auth).then(() => window.location.href = 'index.html');
+            signOut(auth).then(() => window.location.reload());
         };
 
         const postsContainer = document.getElementById('postsContainer');
-        const modal = document.getElementById('postModal');
-        const modalContent = document.getElementById('modalContent');
-        const deleteBtn = document.getElementById('deleteBtn');
-        const statusMsg = document.getElementById('statusMsg');
-        let currentPostId = null;
-
-        lucide.createIcons();
-
+        
         async function loadPosts() {
             try {
+                // 这里为了简单，我们拉取所有日记，然后在 JS 里过滤
+                // (专业做法是用 Security Rules，但这对初学者最简单)
                 const q = query(postsCollection);
                 const querySnapshot = await getDocs(q);
-                postsContainer.innerHTML = ''; 
                 const posts = [];
                 querySnapshot.forEach((doc) => posts.push({ id: doc.id, ...doc.data() }));
+                
+                // 按时间排序
                 posts.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
-                if (posts.length === 0) {
-                    postsContainer.innerHTML = `<div class="text-center py-20 opacity-50"><p>还没有日记哦</p></div>`;
-                    return;
-                }
+                postsContainer.innerHTML = ''; 
+                let visibleCount = 0;
 
                 posts.forEach(post => {
+                    // 🚨 核心逻辑：如果不是公开的，且不是管理员，就隐藏！
+                    const isPublic = post.status === 'public' || !post.status; // 兼容以前没设置 status 的旧日记
+                    if (!isAdmin && !isPublic) return; 
+
+                    visibleCount++;
                     const dateObj = post.createdAt ? new Date(post.createdAt.seconds * 1000) : new Date();
+                    
+                    // 状态标签 (只有管理员看得到)
+                    let statusBadge = '';
+                    if (isAdmin) {
+                        if (post.status === 'private') statusBadge = `<span class="bg-purple-100 text-purple-600 text-xs px-2 py-0.5 rounded ml-2">🔒 私密</span>`;
+                        else if (post.status === 'draft') statusBadge = `<span class="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded ml-2">📝 草稿</span>`;
+                    }
+
                     const card = document.createElement('article');
-                    card.className = 'bg-white p-5 rounded-2xl shadow-sm border border-slate-100 active:scale-[0.98] transition-all cursor-pointer hover:shadow-md';
+                    card.className = `bg-white p-5 rounded-2xl shadow-sm border border-slate-100 active:scale-[0.98] transition-all cursor-pointer hover:shadow-md ${post.status === 'draft' ? 'opacity-70 grayscale' : ''}`;
                     card.innerHTML = `
                         <div class="flex items-baseline gap-3 mb-2">
                             <span class="text-2xl font-bold text-slate-800">${dateObj.getDate()}</span>
                             <div class="flex flex-col text-xs text-slate-400"><span>${dateObj.toLocaleDateString('zh-CN', { weekday: 'short' })}</span><span>${dateObj.getFullYear()}.${dateObj.getMonth()+1}</span></div>
-                            <h3 class="flex-1 font-bold text-slate-700 ml-2 truncate">${escapeHtml(post.title)}</h3>
+                            <h3 class="flex-1 font-bold text-slate-700 ml-2 truncate flex items-center">
+                                ${escapeHtml(post.title)} ${statusBadge}
+                            </h3>
                         </div>
                         <p class="text-slate-500 text-sm line-clamp-2 leading-relaxed">${escapeHtml(post.content)}</p>`;
                     card.onclick = () => openModal(post);
                     postsContainer.appendChild(card);
                 });
+
+                if (visibleCount === 0) {
+                    postsContainer.innerHTML = `<div class="text-center py-20 opacity-50"><p>暂时没有公开日记哦</p></div>`;
+                }
+
             } catch (error) { console.error(error); }
         }
+
+        // 打开详情
+        const modal = document.getElementById('postModal');
+        const modalContent = document.getElementById('modalContent');
+        const adminActions = document.getElementById('adminActions');
+        const guestActions = document.getElementById('guestActions');
 
         function openModal(post) {
             currentPostId = post.id;
             const dateObj = post.createdAt ? new Date(post.createdAt.seconds * 1000) : new Date();
-            modalContent.innerHTML = `<h2 class="text-2xl font-bold text-slate-800 mb-2">${escapeHtml(post.title)}</h2><div class="text-xs text-slate-400 mb-6 pb-4 border-b border-slate-50">${dateObj.toLocaleString()}</div><div class="text-slate-600 leading-relaxed whitespace-pre-wrap text-base">${escapeHtml(post.content)}</div>`;
+            
+            // 只有管理员能看到操作按钮
+            if (isAdmin) {
+                adminActions.classList.remove('hidden');
+                guestActions.classList.add('hidden');
+            } else {
+                adminActions.classList.add('hidden');
+                guestActions.classList.remove('hidden');
+            }
+
+            modalContent.innerHTML = `
+                <h2 class="text-2xl font-bold text-slate-800 mb-2">${escapeHtml(post.title)}</h2>
+                <div class="text-xs text-slate-400 mb-6 pb-4 border-b border-slate-50 flex gap-4">
+                    <span>${dateObj.toLocaleString()}</span>
+                    ${isAdmin && post.status ? `<span class="uppercase font-bold tracking-wider text-pink-400">${post.status}</span>` : ''}
+                </div>
+                <div class="text-slate-600 leading-relaxed whitespace-pre-wrap text-base">${escapeHtml(post.content)}</div>
+            `;
             modal.classList.remove('hidden');
             lucide.createIcons();
         }
 
-        deleteBtn.onclick = async () => {
+        // ✏️ 编辑跳转
+        document.getElementById('editBtn').onclick = () => {
+            window.location.href = `write.html?id=${currentPostId}`;
+        };
+
+        // 🗑️ 删除
+        document.getElementById('deleteBtn').onclick = async () => {
             if (confirm('真的要删除吗？')) {
-                try {
-                    await deleteDoc(doc(db, "posts", currentPostId));
-                    showStatus('已删除！', 'success');
-                    modal.classList.add('hidden');
-                    loadPosts();
-                } catch (e) { alert(e.message); }
+                await deleteDoc(doc(db, "posts", currentPostId));
+                modal.classList.add('hidden');
+                loadPosts();
+                showStatus('已删除！', 'success');
             }
         };
 
         document.getElementById('closeModal').onclick = () => modal.classList.add('hidden');
         modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); }
         function escapeHtml(t) { return t ? t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : ""; }
-        function showStatus(msg, type) { statusMsg.innerText = msg; statusMsg.className = `fixed top-20 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg text-sm font-bold z-50 animate-bounce ${type === 'success' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`; statusMsg.classList.remove('hidden'); setTimeout(() => statusMsg.classList.add('hidden'), 3000); }
+        function showStatus(msg, type) { const el=document.getElementById('statusMsg'); el.innerText=msg; el.className=`fixed top-20 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg text-sm font-bold z-50 animate-bounce ${type==='success'?'bg-green-100 text-green-600':'bg-red-100 text-red-600'}`; el.classList.remove('hidden'); setTimeout(()=>el.classList.add('hidden'),3000); }
     </script>
     <style>.animate-slide-up { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); } @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }</style>
 </body>
