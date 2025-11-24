@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- 这一行最重要！让它支持手机适配 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- 🍎 iOS PWA 魔法设定 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="摸摸汐凪">
+    
+    <title>摸摸汐凪</title>
+    
+    <!-- 使用 Tailwind CSS 让界面变漂亮 (直接引入，无需安装) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入图标库 -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* 禁止文字被选中，更有 App 的感觉 */
+        body {
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* 简单的动画 */
+        @keyframes bounce-sm {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .animate-bounce-slow {
+            animation: bounce-sm 2s infinite;
+        }
+    </style>
+</head>
+<body class="bg-pink-50 min-h-screen flex flex-col font-sans text-slate-800 overflow-hidden">
+
+    <!-- 顶部占位 (避开刘海屏) -->
+    <div class="h-12 w-full bg-transparent"></div>
+
+    <!-- 主内容区 -->
+    <main class="flex-1 flex flex-col items-center justify-center p-6 space-y-8">
+        
+        <!-- 标题 -->
+        <div class="text-center space-y-2">
+            <h1 class="text-2xl font-bold text-pink-500">汐凪的小窝 🌸</h1>
+            <p class="text-xs text-gray-400">添加到主屏幕试试看喵！</p>
+        </div>
+
+        <!-- 互动卡片 -->
+        <div class="relative group cursor-pointer active:scale-95 transition-transform duration-150" onclick="handlePat()">
+            <div class="w-56 h-56 bg-white rounded-3xl shadow-xl border-4 border-pink-200 flex items-center justify-center relative overflow-hidden">
+                <!-- 汐凪的表情 -->
+                <div id="avatar" class="text-7xl transition-transform duration-300">
+                    🐱✨
+                </div>
+                <!-- 点击时的波纹效果 -->
+                <div id="ripple" class="absolute inset-0 bg-pink-400/20 opacity-0 transition-opacity duration-200"></div>
+            </div>
+            <!-- 小红点装饰 -->
+            <div class="absolute -top-3 -right-3 bg-red-400 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg animate-bounce-slow">
+                点我!
+            </div>
+        </div>
+
+        <!-- 计数器 -->
+        <div class="bg-white px-8 py-4 rounded-2xl shadow-sm border border-pink-100 flex items-center space-x-3">
+            <i data-lucide="heart" class="text-pink-500 fill-pink-500 w-6 h-6"></i>
+            <span id="counter" class="text-4xl font-mono font-bold text-pink-600">0</span>
+            <span class="text-gray-400 text-sm">次摸摸</span>
+        </div>
+
+    </main>
+
+    <!-- 底部按钮 -->
+    <div class="p-8 pb-12">
+        <button onclick="handlePat()" class="w-full py-4 bg-gradient-to-r from-pink-400 to-pink-500 text-white rounded-2xl font-bold text-lg shadow-lg shadow-pink-200 active:shadow-none active:translate-y-1 transition-all flex items-center justify-center space-x-2">
+            <span>给予摸摸 (Pat Pat)</span>
+        </button>
+    </div>
+
+    <script>
+        // 初始化图标
+        lucide.createIcons();
+
+        // 读取保存的次数
+        let count = parseInt(localStorage.getItem('pats') || '0');
+        const counterEl = document.getElementById('counter');
+        const avatarEl = document.getElementById('avatar');
+        const rippleEl = document.getElementById('ripple');
+        
+        // 更新显示
+        counterEl.innerText = count;
+
+        function handlePat() {
+            // 增加次数
+            count++;
+            counterEl.innerText = count;
+            localStorage.setItem('pats', count);
+
+            // 简单的动画反馈
+            rippleEl.style.opacity = '1';
+            setTimeout(() => rippleEl.style.opacity = '0', 150);
+
+            // 随机表情变化
+            const faces = ['🐱✨', '😽💕', '😻💖', '😸🎵', '😼⚡'];
+            avatarEl.innerText = faces[Math.floor(Math.random() * faces.length)];
+
+            // 手机震动 (如果支持)
+            if (navigator.vibrate) navigator.vibrate(50);
+        }
+    </script>
+</body>
+</html>
