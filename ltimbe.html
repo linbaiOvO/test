@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ltimbe随机生成 - Ultimate</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入了 Noto Sans SC (思源黑体) -->
+    <link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Noto+Sans+SC:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        /* 字体栈保持不变 */
+        body, button, div, h1, span {
+            font-family: 'DotGothic16', 'Noto Sans SC', sans-serif !important;
+        }
+
+        body {
+            background-color: #020202;
+            color: #00f3ff; /* 修改配色：改为冰青色 (Cyan) */
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* CRT 扫描线 */
+        .scanlines {
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.2) 50%,
+                rgba(0,0,0,0.2)
+            );
+            background-size: 100% 4px;
+            position: fixed;
+            pointer-events: none;
+            top: 0; right: 0; bottom: 0; left: 0;
+            z-index: 10;
+        }
+
+        /* 屏幕发光 - 修改为青色光晕 */
+        .crt-glow {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            background: radial-gradient(circle, rgba(16, 18, 18, 0) 50%, rgba(0, 0, 0, 0.8) 100%);
+            z-index: 20;
+            box-shadow: inset 0 0 80px rgba(0, 243, 255, 0.15);
+        }
+
+        /* 故障动画 */
+        @keyframes glitch-anim {
+            0% { transform: translate(0); }
+            20% { transform: translate(-2px, 2px); }
+            40% { transform: translate(-2px, -2px); }
+            60% { transform: translate(2px, 2px); }
+            80% { transform: translate(2px, -2px); }
+            100% { transform: translate(0); }
+        }
+
+        .glitch-active {
+            animation: glitch-anim 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) both infinite;
+            text-shadow: 3px 0 #ff00c1, -3px 0 #00fff9;
+            color: #fff;
+        }
+
+        /* 光标 - 修改颜色 */
+        .cursor::after {
+            content: '█';
+            animation: blink 0.8s step-end infinite;
+            margin-left: 5px;
+            color: #00f3ff;
+        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        /* 按钮 - 修改颜色 */
+        .cyber-btn {
+            background: transparent;
+            border: 2px solid #00f3ff;
+            color: #00f3ff;
+            text-transform: uppercase;
+            font-weight: bold;
+            letter-spacing: 2px;
+            transition: all 0.2s ease;
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+        .cyber-btn:hover {
+            background: #00f3ff;
+            color: #000;
+            box-shadow: 0 0 30px rgba(0, 243, 255, 0.6);
+        }
+        .cyber-btn:active { transform: scale(0.96); }
+
+        /* 滚动条 - 修改配色 */
+        .custom-scroll::-webkit-scrollbar { width: 8px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #001111; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #004444; border: 1px solid #00f3ff; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #00f3ff; }
+
+    </style>
+</head>
+<!-- 修改 Tailwind 类为 cyan 系列 -->
+<body class="selection:bg-cyan-500 selection:text-black">
+
+    <div class="scanlines"></div>
+    <div class="crt-glow"></div>
+
+    <!-- 主容器 -->
+    <div class="relative z-30 w-full max-w-4xl h-[90vh] md:h-[80vh] flex flex-col p-4 md:p-8 gap-4">
+        
+        <!-- 头部 -->
+        <div class="flex justify-between items-end border-b-2 border-cyan-900 pb-2 mb-2 select-none">
+            <div>
+                <!-- 修改标题名字和颜色 -->
+                <h1 class="text-3xl md:text-5xl font-bold tracking-tight text-cyan-500" style="text-shadow: 0 0 10px rgba(0,243,255,0.5);">
+                    ltimbe随机生成
+                </h1>
+                <div class="text-xs md:text-sm opacity-60 mt-1">
+                    STATUS: LISTENING...
+                </div>
+            </div>
+            <div class="text-right font-mono text-xs md:text-sm opacity-80">
+                <div class="animate-pulse">MEM: <span id="mem-val">42.0%</span></div>
+                <!-- 修改系统名 -->
+                <div class="text-xl md:text-2xl font-bold mt-1">Ltimbe</div>
+            </div>
+        </div>
+
+        <!-- 显示区域 -->
+        <div id="display-container" class="flex-1 border-2 border-cyan-900 bg-black/40 relative overflow-hidden flex flex-col items-center justify-center p-4 md:p-8 transition-all duration-300">
+            
+            <!-- 装饰噪音 -->
+            <div class="absolute top-2 left-2 text-[10px] opacity-20 pointer-events-none whitespace-pre leading-3 select-none" id="bg-noise"></div>
+
+            <!-- 文本核心 -->
+            <div id="text-wrapper" class="w-full max-h-full custom-scroll overflow-y-auto flex flex-col items-center">
+                <!-- 修改 text-shadow 颜色 -->
+                <div id="main-text" class="cursor font-bold leading-relaxed text-center whitespace-pre-wrap break-words max-w-full my-auto" style="text-shadow: 0 0 8px rgba(0, 243, 255, 0.4);">
+                    等待输入...
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 底部控制 -->
+        <div class="flex flex-col md:flex-row justify-between items-center gap-4 mt-2">
+            <div class="text-xs opacity-40 order-2 md:order-1">
+                > CONNECTED TO SERVER <br>
+                > USER: ???
+            </div>
+            <!-- 修改函数名 -->
+            <button onclick="generateltimbe()" id="trigger-btn" class="cyber-btn px-12 py-4 text-xl md:text-2xl rounded w-full md:w-auto order-1 md:order-2">
+                生成 / GENERATE
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // 修改变量名和内容
+        const ltimbeTexts = [
+            "演示模式退不出来了",
+            "这辈子吃过的最好吃的舍利子来自召乌力吉高僧",
+            "拿也需要力气，我就把手放回去。放回去之后又觉得连伸手都做不到",
+            "黑屏了 是哪里没设置好",
+            "我想说，或者做一件事，突然冒出来另一件：洗衣机突然开始震动，然后，台灯，没灭也没闪就好好的亮着看起来在正常运行，于是，我，把台灯关了，就这样。对。这不会让它更容易，只是顺手。其实无关",
+            "决定了，不吃第二碗",
+            "断裂",
+            "怎么变回去 把刚才那句删掉 假装没说过 然后继续走路 谁都知道 记忆的时效是什么 如果，并羡慕超商 喜欢的省略是三个点可有时不得不多三个 倘若 赞美像廉价的塑料花一样堆满走廊 诅咒在拐角处发热 两个都是真的 有点冷场了啊 毕竟 把刚才那句删掉 假装没说过",
+            "隐藏层维度是48.87，是宇宙物理学中基本概念，是宇宙学中的一个重要概念。它指出，所有宇宙的大小、质量、能量、动量等基 本规律都是宇宙学的基石，而这些规律是宇宙学研究的重要内容之一。在宇宙中，任何物质都可能存在，包括气体、尘埃和气体等，这些物质在宇宙中的分布非常小",
+            "决定了，不吃第二碗，我只能吃。不知道，如果有的话，你能不能说说，我应该怎么办？如果有的话，你可以去医生那里看看，或者尝试跟你说说看，  听听听听。如果没有必要，也可以考虑去找专业医生进行咨询",
+            "怎么变回去 把刚才那句删掉 后再写一句 删掉后再写一句 把刚才那句删掉后再写一句 删掉后再写一句 删掉后再写一句 删掉后再写一句 把刚才那句删掉后再写一句 删掉后再写一句 删掉后再写一句 删掉后再写一句 删掉后再写一句 删掉后再写一句 删掉后再写一句 删掉后再写一句 删掉后再写一句 删掉后再写一句 删掉后再写一句 删掉后再写一句 删掉后再写一句",
+            "断裂后裂缝的前方，一个巨大的黑色素箱。黑色素箱是我最好的伙伴，我总是在黑色素箱里保存它。黑色素箱中的硬盘里装着一个黑色  素箱，里面装着一个黑色素箱。黑色素箱是我最好的伙伴，我总是在黑色素箱里保存它",
+            "黑屏了 是哪里没设置好了？我建议使用白屏，因为它可以允许多黑屏。黑屏的设置可以设置在手机上，因此它不会允许黑屏。",
+            "后午休出现之后就再也没有喝过酒了。我和朋友聊天，想了想，后午休出现了，但我没有喝过酒",
+            "谁能教我做梦，你们做梦好好玩，关于做梦的钥匙点。火山岩苏打，我互通的现代化碳酸签证，是我自己写的那本小说。我觉得这部小说是我最喜欢的一本小说，它充满了魔幻和奇幻元素，非常引人入胜。这本书让我感受到了人性的美好，也让我更深入地了解了未来的发展",
+            "窗口被堵死了我看不到是黑的，我一直摸着黑在比可乐更浓郁的奶制品里一步又一步，我却发现自己没有任何干扰"
+        ];
+
+        const mainText = document.getElementById('main-text');
+        const textWrapper = document.getElementById('text-wrapper');
+        const displayContainer = document.getElementById('display-container');
+        const memVal = document.getElementById('mem-val');
+        const bgNoise = document.getElementById('bg-noise');
+
+        let isTyping = false;
+        let timeoutIds = [];
+
+        // 噪音生成
+        function updateNoise() {
+            let noise = "";
+            const chars = "01.. ";
+            for(let i=0; i<100; i++) {
+                noise += chars.charAt(Math.floor(Math.random() * chars.length)) + " ";
+                if(i%10===0) noise += "\n";
+            }
+            bgNoise.innerText = noise;
+            memVal.innerText = (Math.random() * 99).toFixed(1) + "%";
+        }
+        setInterval(updateNoise, 1500);
+
+        function clearTimeouts() {
+            timeoutIds.forEach(id => clearTimeout(id));
+            timeoutIds = [];
+        }
+
+        // 修改函数名
+        function generateltimbe() {
+            // 点击加速
+            if (isTyping) {
+                clearTimeouts();
+                mainText.innerHTML = mainText.dataset.fullText.replace(/\n/g, '<br>');
+                isTyping = false;
+                // 确保滚动到底部
+                setTimeout(() => {
+                    textWrapper.scrollTop = textWrapper.scrollHeight;
+                }, 50);
+                return;
+            }
+
+            isTyping = true;
+            
+            // 故障闪烁特效
+            displayContainer.classList.add('glitch-active');
+            setTimeout(() => displayContainer.classList.remove('glitch-active'), 200);
+
+            // 1. 随机选词 - 使用新的数组
+            const randomIndex = Math.floor(Math.random() * ltimbeTexts.length);
+            const text = ltimbeTexts[randomIndex];
+            mainText.dataset.fullText = text;
+
+            // 2. 字体大小动态控制
+            // 始终保持 my-auto 类
+            mainText.className = "cursor font-bold leading-relaxed text-center whitespace-pre-wrap break-words max-w-full my-auto";
+            
+            if (text.length <= 10) {
+                // 超短句：巨型字体
+                mainText.classList.add('text-4xl', 'md:text-6xl'); 
+            } else if (text.length <= 30) {
+                // 短句：大型字体
+                mainText.classList.add('text-2xl', 'md:text-4xl');
+            } else if (text.length <= 100) {
+                // 中句：中型字体
+                mainText.classList.add('text-1xl', 'md:text-2xl');
+            } else {
+                // 长文：正常字体，左对齐
+                mainText.classList.add('text-lg', 'md:text-1xl', 'text-left');
+                mainText.classList.remove('text-center');
+            }
+
+            // 3. 打字机
+            mainText.innerHTML = "";
+            let i = 0;
+            const speed = text.length > 50 ? 10 : 50;
+
+            function type() {
+                if (i < text.length) {
+                    mainText.innerHTML += text.charAt(i) === '\n' ? '<br>' : text.charAt(i);
+                    textWrapper.scrollTop = textWrapper.scrollHeight;
+                    i++;
+                    timeoutIds.push(setTimeout(type, speed + Math.random()*20));
+                } else {
+                    isTyping = false;
+                }
+            }
+            type();
+        }
+
+        // 初始化
+        setTimeout(() => {
+            mainText.innerText = "READY.";
+        }, 500);
+
+    </script>
+</body>
+</html>
